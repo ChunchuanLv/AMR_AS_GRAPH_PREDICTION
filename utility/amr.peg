@@ -1,0 +1,20 @@
+# PEG (parsing expression grammar) for a single AMR annotation.MEDCONST = ~r"[a-z]{2,}" ALIGNMENT? # aside from + and -, named constants must have at least 2 letters (to distinguish from variable names)
+# Designed for Parsimonious library (the https://github.com/erikrose/parsimonious), 
+# though a bit of automatic cleanup is required when loading this file.
+# Nathan Schneider, 2015-05-05
+
+ALL = ~r"\s*" X ~r"\s*$"
+
+X = "(" ` VAR _ "/" _ CONCEPT (_ REL _ Y)* ` ")"
+Y = X / NAMEDCONST / VAR / STR / NUM
+VAR = ~r"[a-z]+[0-9]*"
+NAMEDCONST = ~r"[a-z]{2,}\b" ALIGNMENT? # aside from + and -, named constants must have at least 2 letters (to distinguish from variable names)
+STR = "\"" ~r"[^\"\s]([^\"\n\r]*[^\"\s])?" "\"" ALIGNMENT?	# quoted string literal. nonempty; may not start or end with whitespace
+CONCEPT = ~r"[A-Za-z0-9.\!\?,:;'][A-Za-z0-9.i\!\?.;:'-]*" ALIGNMENT?	# seen in data: :li (x3 / 3) and :quant (x / 355.02) and :mod (x / friggin')
+REL = ~r":[A-Za-z][A-Za-z0-9-]*" ALIGNMENT?
+NUM = ~r"[+-]?\d*(\.\d+)?" ALIGNMENT?
+ALIGNMENT = "~" ~r"[A-Za-z0-9.]+"
+# TODO: the regexes, especially NUM, need checking
+
+_ = ~r"([ \t]*[\n\r][ \t]*)|[ \t]+"
+` = ~r"[ \t]*[\n\r]?[ \t]*"

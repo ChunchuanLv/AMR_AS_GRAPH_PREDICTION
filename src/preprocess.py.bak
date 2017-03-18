@@ -1,0 +1,153 @@
+from utility.amr import *
+from nltk.tag import StanfordNERTagger
+from nltk.tag import StanfordPOSTagger
+from nltk.tokenize import word_tokenize
+from nltk.parse.stanford import StanfordDependencyParser
+from numpy import array
+import codecs
+import sys
+import lasagne.init
+
+import pickle
+from nltk.stem import WordNetLemmatizer
+
+embeddings_f = open("data/embeddings",'w+') 
+to_id_f= open("data/to_id_f",'w+') 
+
+train_data_f = open("data/train_data",'w+') 
+
+valid_data_f = open("data/valid_data",'w+') 
+
+test_data_f = open("data/test_data",'w+') 
+
+
+
+# Change the path according to your system
+path_to_stanford = os.path.expanduser('~')+"/Dependency"
+stanford_classifier = path_to_stanford+'/stanford-ner-2016-10-31/classifiers/english.muc.7class.distsim.crf.ser.gz'
+stanford_ner_path = path_to_stanford+'/stanford-ner-2016-10-31/stanford-ner.jar'
+stanford_postagger = path_to_stanford+'/stanford-postagger-full-2016-10-31/stanford-postagger.jar'
+stanford_postagger_model = path_to_stanford+'/stanford-postagger-full-2016-10-31/models/english-bidirectional-distsim.tagger'
+stanford_dependency = path_to_stanford+'/stanford-parser-full-2016-10-31/stanford-parser.jar'
+stanford_dependency_models = path_to_stanford+'/stanford-parser-full-2016-10-31/stanford-parser-3.7.0-models.jar'
+
+embed_path = os.path.expanduser('~') + "/Data"
+
+filepath =  os.path.expanduser('~')+"/Data/amr_annotation_r2/data/amrs/split/training/deft-p2-amr-r2-amrs-training-dfb.txt"
+
+# Creating ReUsable Object
+st_ner = StanfordNERTagger(stanford_classifier, stanford_ner_path, encoding='utf-8')
+wordnet_lemmatizer = WordNetLemmatizer()
+dependency_parser = StanfordDependencyParser(stanford_dependency, stanford_dependency_models,encoding='utf-8')
+st_pos = StanfordPOSTagger(stanford_postagger_model, path_to_jar=stanford_postagger,encoding='utf-8')
+initializer = lasagne.init.Uniform()
+
+def checkFile(filepath,data):
+    f = open(filepath)
+    read = False;
+    all_core_exceptions = []
+    all_non_core_exceptions = []
+
+    line = f.readline()
+    n = 0
+    non_core_of_bad = 0
+    core_bad = 0
+    while line != '' and n <= N:
+        if line.startswith("# ::id"):
+            s = ""
+            n=n+1
+            sid = line
+            snt = f.readline().replace("# ::snt","")
+            f.readline()
+            line = f.readline()
+            while line.strip() != '':
+                s = s+line
+                line = f.readline()     
+            print (snt)
+            snt_token = word_tokenize(snt)
+            lemmas = [wordnet_lemmatizer.lemmatize(v) for v in snt_token]
+            ner_tags = st_ner.tag(snt_token)
+            pos_tags = st_pos.tag(snt_token)
+          #  dependency = dependency_parser.parse(snt_token)
+          #  print ([i for i in dependency])
+            a = AMR(s)
+            triples = a.triples()
+            add_embedding(snt_token,lemmas,ner_tags,pos_tags,triples)
+            processSentence(train_data,snt_token,lemmas,ner_tags,pos_tags,triples)
+            n = n+1
+         #   all_core_exceptions = all_core_exceptions +core_exceptions
+         #   all_non_core_exceptions = all_non_core_exceptions + non_core_exceptions        
+        line = f.readline()
+
+def initial_embedding(word_embedding,lemma_embedding):
+    concept_embedding['TOP'] = initializer((dim,))
+    lemma_embedding['_UNK'] = initializer((dim,))
+    word_embedding['_UNK'] = initializer((dim,))
+    for i, line in enumerate(open(embed_path+'/sskip.100.vectors', 'r')):
+        parts = line.rstrip().split()
+        word_embedding[parts[0]] = list(map(float, parts[1:]))
+        le = wordnet_lemmatizer.lemmatize(parts[0])
+        if le not in lemma_embedding:
+            lemma_embedding[le] = initializer((dim,))
+
+def add_embedding(snt_token,lemmas,ner_tags,pos_tags,triples):
+    for i in range(len(snt_token)):
+        if snt_token[i] not in word_embedding:
+            word_embedding[snt_token[i]] = initializer((dim,))
+        if ner_tags[i] not in ner_tag_embedding:
+            ner_tag_embedding[ner_tags[i]] = initializer((dim,))
+        if pos_tags[i] not in pos_tag_embedding:
+            pos_tag_embedding[pos_tags[i]] = initializer((dim,))
+        if lemmas[i] not in lemma_embedding:
+            lemma_embedding[lemmas[i]] = initializer((dim,))
+    for c in triples:
+        if c[2] not in concept_embedding:
+            if c[2] in word_embedding:
+                concept_embedding[c[2]] = word_embedding[c[2]]
+            else:
+                concept_embedding[c[2]] = initializer((dim,))
+                
+def processSentence(train_data,snt_token,lemmas,ner_tags,pos_tags,triples):
+    return 0
+
+def to_dict_and_embeds(embedding):
+    embed_size = len(embedding)
+    dictionary = dict()
+    embeds_l = []
+    for k, v in embedding.iteritems():
+        dictionary[k] = len(dictionary)
+        embeds_l.append(v)
+    embeds = array( embeds_l)
+    return dictionary,embeds
+N = 1
+n = 0
+dim = 100
+word_embedding = dict()
+lemma_embedding = dict()
+ner_tag_embedding = dict()
+pos_tag_embedding = dict()
+concept_embedding = dict()
+train_data = []
+valid_data = []
+test_data = []
+to_dict_and_embeds(word_embedding)
+
+checkFile(filepath,train_data)
+
+initial_embedding(word_embedding,lemma_embedding)
+
+word_dict,word_embeds = to_dict_and_embeds(word_embedding)
+
+print word_dict.keys()[1], word_embeds[1]
+print len(word_dict), len(word_embeds)
+
+#print (word_embedding['hi'])
+
+
+
+embeddings_f.close()
+to_id_f.close()
+train_data_f.close()
+valid_data_f.close()
+test_data_f.close()
+
