@@ -60,7 +60,7 @@ parser.add_argument('-brnn_merge', default='concat',
 
 ## Optimization options
 
-parser.add_argument('-total_size', type=int, default=2048,
+parser.add_argument('-total_size', type=int, default=1024,
                     help='Maximum batch size')
 parser.add_argument('-max_generator_batches', type=int, default=16,
                     help="""Maximum batches of words in a sequence to run
@@ -82,7 +82,7 @@ parser.add_argument('-learning_rate', type=float, default=1,
 parser.add_argument('-max_grad_norm', type=float, default=1,
                     help="""If the norm of the gradient vector exceeds this,
                     renormalize it to have the norm equal to max_grad_norm""")
-parser.add_argument('-dropout', type=float, default=0.3,
+parser.add_argument('-dropout', type=float, default=0.5,
                     help='Dropout probability; applied between LSTM stacks.')
 parser.add_argument('-learning_rate_decay', type=float, default=0.998,
                     help="""Decay learning rate by this much if (i) perplexity
@@ -263,7 +263,6 @@ def eval(model, data,dicts):
         high_index = high_index[1:]
         lemma_index = lemma_index[1:]
 
-        model.generate = False
         out,attns= model.forward(x)
 
         generator = model.generator
@@ -305,7 +304,6 @@ def trainModel(model, trainData, validData, dicts, optim):
             lemma_index = lemma_index[1:]
      #       print ("trainModel",srcBatch.size())
             generator = model.generator
-            model.generate = False
             out,attns = model.forward(x)
             loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,False)
        #     print ("in trainModel tgtBatch",tgtBatch.size())
@@ -361,8 +359,11 @@ def trainModel(model, trainData, validData, dicts, optim):
                 'epoch': epoch,
                 'optim': optim,
             }
+            print ("saving")
+            print('Validation perplexity: %g' % valid_ppl)
+            print("Epoch: ", epoch)
             torch.save(checkpoint,
-                       '%s_e%d_%.2f.pt' % (opt.save_model, epoch, valid_ppl))
+                       'valid_best.pt' )
             valid_loss_low = valid_loss
 
 def main():
@@ -405,13 +406,17 @@ def main():
 
     if opt.train_from is None:
         NMTModel = npmt.Models.NMTModel(opt, dicts)
+
+        NMTModel.initial_embedding()
+
+  #      NMTModel.to_parallel(opt)
         if opt.cuda:
             NMTModel.cuda()
         else:
             NMTModel.cpu()
             
-        for p in NMTModel.parameters():
-            p.data.uniform_(-opt.param_init, opt.param_init)
+    #    for p in NMTModel.parameters():
+      #      p.data.uniform_(-opt.param_init, opt.param_init)
             
         parameters_to_train = []
         for p in NMTModel.parameters():
@@ -423,24 +428,23 @@ def main():
             lr_decay=opt.learning_rate_decay,
             start_decay_at=opt.start_decay_at
         )
-        NMTModel.initial_embedding()
         
  #       print ("posterior[:,0,:]",posterior[:,0,:])
     else:
         print('Loading from checkpoint at %s' % opt.train_from)
         checkpoint = torch.load(opt.train_from)
-        model = checkpoint['model']
+        NMTModel = checkpoint['model']
         if opt.cuda:
-            model.cuda()
+            NMTModel.cuda()
         else:
-            model.cpu()
+            NMTModel.cpu()
         optim = checkpoint['optim']
         opt.start_epoch = checkpoint['epoch'] + 1
         
     nParams = sum([p.nelement() for p in NMTModel.parameters()])
     print('* number of parameters: %d' % nParams)
 
-    trainModel(NMTModel, training_data,  dev_data, dicts, optim)
+    trainModel(NMTModel, training_data,  dev_data, NMTModel.dicts, optim)
 
 
 if __name__ == "__main__":

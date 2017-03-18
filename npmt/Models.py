@@ -21,7 +21,6 @@ class Encoder(nn.Module):
                         num_layers=opt.layers,
                         dropout=opt.dropout,
                         bidirectional=opt.brnn)
-        
         self.word_lut = embs["word_lut"]
         
         self.word_fix_lut  = embs["word_fix_lut"]
@@ -37,9 +36,6 @@ class Encoder(nn.Module):
         # self.rnn.bias_ih_l0.data.div_(2)
         # self.rnn.bias_hh_l0.data.copy_(self.rnn.bias_ih_l0.data)
 
-        if opt.pre_word_vecs_enc is not None:
-            pretrained = torch.load(opt.pre_word_vecs_enc)
-            self.word_lut.weight.copy_(pretrained)
 
     def forward(self, input, hidden=None,posterior = None):
         batch_size = input.size(2) # batch first for multi-gpu compatibility
@@ -105,8 +101,9 @@ class Generator(nn.Module):
         self.cat_lut = embs["cat_lut"]
         
         self.cat_non_linear  =  nn.Linear(self.cat_lut.embedding_dim,opt.rnn_size)
-        
+        self.cat_non_linear.weight.data.normal_(0,math.sqrt(2.0/(self.cat_lut.embedding_dim*opt.rnn_size)))
         self.lemma_non_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
+        self.lemma_non_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
                                 
         self.softmax = nn.Softmax()
        
@@ -208,6 +205,15 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(opt.dropout)
         self.Tensor = torch.FloatTensor
 
+
+        for m in self.modules():
+            if isinstance(m, nn.Embedding):
+                n = m.embedding_dim
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
     #    self.cat_nn = nn.Sequential( nn.Linear(opt.rnn_size,self.cat_lut.embedding_dim),
         #                            nn.Tanh())
     #    self.con_nn = nn.Sequential( nn.Linear(opt.rnn_size,self.cat_lut.embedding_dim),
@@ -286,7 +292,10 @@ class NMTModel(nn.Module):
                     word_embedding.weight.data[id].copy_(tensor)
                     word_initialized += 1
         print ("word_initialized", word_initialized)
-    
+    def to_parallel(self,opt):
+        self.encoder =  torch.nn.DataParallel(self.encoder, device_ids=opt.gpus)
+        self.decoder =  torch.nn.DataParallel(self.decoder, device_ids=opt.gpus)
+        self.generator =  torch.nn.DataParallel(self.generator, device_ids=opt.gpus)
     def __init__(self, opt,dicts):
         super(NMTModel, self).__init__()
         self.embs = dict()
@@ -322,7 +331,15 @@ class NMTModel(nn.Module):
         self.cat_lut = nn.Embedding(dicts["category_dict"].size(),
                                   opt.cat_dim,
                                   padding_idx=PAD)
-        
+
+        for m in self.modules():
+            if isinstance(m, nn.Embedding):
+                n = m.embedding_dim
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
         if opt.cuda:
             self.word_lut.cuda()
             self.word_fix_lut.cuda()

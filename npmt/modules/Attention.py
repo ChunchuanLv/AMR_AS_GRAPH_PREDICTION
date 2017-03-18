@@ -25,8 +25,10 @@ class GlobalAttention(nn.Module):
     def __init__(self, dim):
         super(GlobalAttention, self).__init__()
         self.linear_in = nn.Linear(dim, dim, bias=False)
+        self.linear_in.weight.data.normal_(0,0.707/dim)
         self.sm = nn.Softmax()
         self.linear_out = nn.Linear(dim*2, dim, bias=False)
+        self.linear_out.weight.data.normal_(0,1.0/dim)
         self.tanh = nn.Tanh()
         self.mask = None
 
