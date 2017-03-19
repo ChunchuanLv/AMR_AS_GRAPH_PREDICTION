@@ -156,7 +156,7 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
 
     high_prob = out[:,:,:,0:n_freq].contiguous().view(-1,src_len,n_freq)
     rule_prob = out[:,:,:,n_freq].contiguous().view(-1,src_len)
-    cat_prob = out[:,:,:,n_freq+1:].contiguous().view(-1,src_len,n_cat)
+    cat_likeli = out[:,:,:,n_freq+1:].contiguous().view(-1,src_len,n_cat)
 
   #  high_prob = Variable(high_prob.data, requires_grad= not eval , volatile= eval)
    # rule_prob = Variable(rule_prob.data, requires_grad=  not eval , volatile= eval)
@@ -167,14 +167,14 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
     
     effective_high = high_prob.gather(2,high_index.view(total_size,1,1).expand(total_size,src_len,1)).squeeze(2)
     
-    effective_lemma = effective_rule+effective_high
+    effective_lemma = effective_rule+effective_high +1e-8
 #    print("effective_lemma",effective_lemma.min(),effective_lemma.max(),effective_lemma.sum(2).squeeze(2))
   #  print ("cat_prob",cat_prob.size())
    # print ("cat_batch",cat_batch.size())
-    effective_cat = cat_prob.gather(2,cat_batch.view(total_size,1,1).expand(total_size,src_len,1)).squeeze(2)
+    effective_cat = cat_likeli.gather(2,cat_batch.view(total_size,1,1).expand(total_size,src_len,1)).squeeze(2)
 
 
-    effective = effective_lemma*effective_cat+1e-8
+    effective = effective_lemma*effective_cat   #prior term is computed in effective_lemma
   #  print (effective.min(0))
   #  print (lemma_batch!=0)
   #  print ("n_cat,n_freq",n_cat,n_freq)
@@ -188,21 +188,12 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
     posterior = posterior.view(tgt_len,batch_size,src_len)
     if not eval and False:
         loss.backward()
-        grad = torch.cat((high_prob.grad.data,rule_prob.grad.data.unsqueeze(2),cat_prob.grad.data),2).view(tgt_len,batch_size,src_len,-1)
+        grad = torch.cat((high_prob.grad.data,rule_prob.grad.data.unsqueeze(2),cat_likeli.grad.data),2).view(tgt_len,batch_size,src_len,-1)
     #    del high_prob,rule_prob,cat_prob,effective,effective_cat,effective_lemma
         return loss,num_words,posterior,grad
 
  #   del high_prob,rule_prob,cat_prob,effective,effective_cat,effective_lemma
     return loss,num_words,posterior
-
-def myMemoryEfficientLoss(out,high_index,rule_index,cat_batch,n_freq,n_cat,eval):
-    # compute generations one piece at a time
-    loss = []
-    grad_output = []
-    posterior = []
-    batches =  out.size(1)  // 3
-
-    return loss, grad_output
 
 def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,eval):
     ''' high_index: tgt_len x batch_size        (0 ... n_high-1)
@@ -277,7 +268,7 @@ def eval(model, data,dicts):
     model.train()
     return total_loss / total_words
 
-def trainModel(model, trainData, validData, dicts, optim):
+def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.exp(100)):
     print(model)
     model.train()
     start_time = time.time()
@@ -334,7 +325,6 @@ def trainModel(model, trainData, validData, dicts, optim):
                 start = time.time()
 
         return total_loss / total_words
-    valid_loss_low = math.exp(100)
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
 
@@ -363,7 +353,7 @@ def trainModel(model, trainData, validData, dicts, optim):
             print('Validation perplexity: %g' % valid_ppl)
             print("Epoch: ", epoch)
             torch.save(checkpoint,
-                       'valid_best.pt' )
+                       'model/valid_best.pt' )
             valid_loss_low = valid_loss
 
 def main():
@@ -403,7 +393,7 @@ def main():
           len(training_data.src))
     print(' * maximum total size. %d' % opt.total_size)
     print('Building model...')
-
+    valid_loss = math.exp(100)
     if opt.train_from is None:
         NMTModel = npmt.Models.NMTModel(opt, dicts)
 
@@ -440,11 +430,14 @@ def main():
             NMTModel.cpu()
         optim = checkpoint['optim']
         opt.start_epoch = checkpoint['epoch'] + 1
+        valid_loss = eval(NMTModel, dev_data,dicts)
+        valid_ppl = math.exp(valid_loss)
+        print('Validation perplexity: %g' % valid_ppl)
         
     nParams = sum([p.nelement() for p in NMTModel.parameters()])
     print('* number of parameters: %d' % nParams)
 
-    trainModel(NMTModel, training_data,  dev_data, NMTModel.dicts, optim)
+    trainModel(NMTModel, training_data,  dev_data, NMTModel.dicts, optim,valid_loss)
 
 
 if __name__ == "__main__":

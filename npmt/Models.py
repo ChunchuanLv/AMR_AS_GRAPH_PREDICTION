@@ -140,8 +140,8 @@ class Generator(nn.Module):
         cat_emb =self.cat_non_linear( self.cat_lut.weight) .t().contiguous() # dim x n_cat
         cat_likeli = self.softmax(output.view(-1,dim).mm(cat_emb))
         
-        cat_prob = torch.bmm(attn.view(-1,1,1), cat_likeli.view(-1,1,cat_emb.size(1)))
-        cat_prob = cat_prob.view(tgt_len,batch_size,src_len,cat_emb.size(1))
+     #   cat_prob = torch.bmm(attn.view(-1,1,1), cat_likeli.view(-1,1,cat_emb.size(1)))
+        cat_likeli = cat_likeli.view(tgt_len,batch_size,src_len,cat_emb.size(1))
 
    #     del cat_emb
    #     print ("cat_prob",cat_prob.sum(3).squeeze(3).sum(2).squeeze(2))
@@ -151,7 +151,6 @@ class Generator(nn.Module):
  #       print ("output",output.view(tgt_len*batch_size*src_len,dim).size())
         high_con_score = output.view(-1,dim).mm(high_con_embed).view(tgt_len,batch_size,src_len,self.n_freq)
 
-   #     del high_con_embed
 
         source_lemma_embed= self.lemma_non_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
   #      print ("source_lemma_embed",source_lemma_embed.size())
@@ -169,14 +168,8 @@ class Generator(nn.Module):
         lemma_prob = torch.bmm(attn.view(-1,1,1),lemma_likeli.view(-1,1,self.n_freq+1))
         
         lemma_prob = lemma_prob.view(tgt_len,batch_size,src_len,self.n_freq+1)
-    #    print ("lemma_prob",lemma_prob.min(),lemma_prob.max(),lemma_prob.sum(3).squeeze(3).sum(2).squeeze(2))
-   #     high_prob = lemma_prob[:,:,:,:-1]
-  #      rule_prob = lemma_prob[:,:,:,-1]
-  #      print ("lemma_prob",lemma_prob.sum(3).squeeze(3).sum(2).squeeze(2))
-    #    print ("cat_prob",cat_prob.sum(3).squeeze(3).sum(2).squeeze(2))
-    #    del lemma_likeli
-    #    del total_score
-        out = torch.cat((lemma_prob,cat_prob),3)
+
+        out = torch.cat((lemma_prob,cat_likeli),3)
   #      del lemma_prob,lemma_likeli,total_score
         return out  #   tgt_len x batch x src_len x n_freq + 1 + n_cat
     
