@@ -107,7 +107,7 @@ parser.add_argument('-pre_word_vecs_dec',
 parser.add_argument('-gpus',  nargs='*',default=[1], type=int,
                     help="Use CUDA")
 
-parser.add_argument('-log_interval', type=int, default=10,
+parser.add_argument('-log_interval', type=int, default=50,
                     help="Print stats at this interval.")
 # parser.add_argument('-seed', type=int, default=3435,
 #                     help="Seed for random initialization")
@@ -174,7 +174,7 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
     effective_cat = cat_likeli.gather(2,cat_batch.view(total_size,1,1).expand(total_size,src_len,1)).squeeze(2)
 
 
-    effective = effective_lemma*effective_cat   #prior term is computed in effective_lemma
+    effective = effective_lemma*effective_cat *cat_batch.view(total_size,1).expand(total_size,src_len).ne(PAD).float() #prior term is computed in effective_lemma
   #  print (effective.min(0))
   #  print (lemma_batch!=0)
   #  print ("n_cat,n_freq",n_cat,n_freq)
@@ -218,7 +218,6 @@ def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index
     high_index_split = torch.split(high_index, opt.max_generator_batches,0)
     lemma_index_split = torch.split(lemma_index,opt.max_generator_batches,0)
 
-    out_grads = []
     posteriors = []
     for out_t, lemma_t,cat_t ,attn_t,high_index_t,lemma_index_t in zip(outputs_split, lemma_split,cat_split,attns_split,high_index_split,lemma_index_split):
 
@@ -230,7 +229,7 @@ def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index
         num_words += num_words_t
         posteriors += [posterior]
         if not eval:
-            out_grads += [loss_t.backward(retain_variables=True)]
+            loss_t.backward(retain_variables=True)
 
     grad_output = None if outputs.grad is None else outputs.grad.data
 
@@ -250,17 +249,17 @@ def eval(model, data,dicts):
         x = data[i]
         srcBatch, tgtBatch, idBatch = x
         high_index,lemma_index = idBatch
-        tgtBatch = tgtBatch[:,1:]
-        high_index = high_index[1:]
-        lemma_index = lemma_index[1:]
+        tgtBatch_t = tgtBatch[:,1:]
+        high_index_t = high_index[1:]
+        lemma_index_t = lemma_index[1:]
+
 
         out,attns= model.forward(x)
-
         generator = model.generator
    #     print ("out",out.size())
 
    #     print ("in eval tgtBatch",tgtBatch.size())
-        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,True)
+        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch, high_index_t,lemma_index_t,generator,dicts,True)
 
         total_loss += loss
         total_words += num_words
@@ -286,17 +285,17 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             batchIdx = batchOrder[i] if epoch >= opt.curriculum else i
 
             model.zero_grad()
-            
+
             x = trainData[batchIdx]
             srcBatch, tgtBatch, idBatch = x
             high_index,lemma_index = idBatch
-            tgtBatch = tgtBatch[:,1:]
-            high_index = high_index[1:]
-            lemma_index = lemma_index[1:]
+            tgtBatch_t = tgtBatch[:,1:]
+            high_index_t = high_index[1:]
+            lemma_index_t = lemma_index[1:]
+            out,attns = model.forward(x)
      #       print ("trainModel",srcBatch.size())
             generator = model.generator
-            out,attns = model.forward(x)
-            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,False)
+            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch, high_index_t,lemma_index_t,generator,dicts,False)
        #     print ("in trainModel tgtBatch",tgtBatch.size())
          #   print ("out",out.size())
 

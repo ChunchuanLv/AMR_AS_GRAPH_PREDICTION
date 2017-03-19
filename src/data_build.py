@@ -31,7 +31,7 @@ def amr_seq_to_id(lemma_dict,concept_dict,category_dict,rel_dict,amr_seq):
 
 #id_seq :  [(con_lemma,cat,[id],rel])]
 def amr_seq_to_index(amr_seq,snt_len):
-    index_seq = []
+    index_seq = [[-2]] #just a dumb
     for l in amr_seq:
         index_seq.append([t[2] for t in l[0]]) 
     index_seq.append([snt_len-1])

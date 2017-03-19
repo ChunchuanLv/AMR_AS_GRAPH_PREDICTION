@@ -140,14 +140,11 @@ def read_frame(le_to_concept):
                 break
             le_to_concept[le] = Concept(t+"-99")
             i = i+1
-from stop_words import get_stop_words
 
-stop_words = [stop_word.split("'")[0] for stop_word in get_stop_words('en')]+["the"]
 
 #or (s1 in s2 and len(s1) > 4)or (s2 in s1 and len(s2) > 4)
 def checkMatch(lemma,con_lemma,matches = [0,0,0,0,0,0,0],original = True):
-    if lemma in  stop_words and False:
-        return False
+
     if con_lemma in lemma  and len( con_lemma)>2 and len(lemma)-len(con_lemma)<5:  
         matches[0] += 1
         return True

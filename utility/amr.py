@@ -187,8 +187,6 @@ class AMRConstant(object):
 
 class AMRString(AMRConstant):
 
-    def __str__(self, align={}):
-        return '"' + self._value + '"' + align.get(self, '')
 
     
     def __repr__(self):

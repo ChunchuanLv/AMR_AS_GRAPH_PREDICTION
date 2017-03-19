@@ -37,10 +37,12 @@ class DataIterator(object):
 
         self.tgt = []
         self.index = []
+        self.source = []
         for d in self.all:
             self.src.append(d[1])
             self.tgt.append(d[2])
             self.index.append(d[3])
+            self.source.append(d[4])
         self.indexPair = []
         total_len = 0
         initial_index = 0
@@ -56,7 +58,8 @@ class DataIterator(object):
             
     #return shape sentence_len, 4
     def read_sentence(self,data):
-        self.all.append((len(data["snt_id"]),torch.LongTensor([data["snt_id"],data["lemma_id"],data["pos_id"],data["ner_id"]]).t().contiguous(),torch.LongTensor(data["amr_id"]).contiguous(),data["index"]))
+        self.all.append((len(data["snt_id"]),torch.LongTensor([data["snt_id"],data["lemma_id"],data["pos_id"],data["ner_id"]]).t().contiguous(),torch.LongTensor(data["amr_id"]).contiguous(),data["index"],
+                         ( data["snt_token"], data["lemma"],data["amr_seq"],data["amr_t"])))
 
             
 
@@ -108,7 +111,7 @@ class DataIterator(object):
                             rule_index[-1][-1] = [1 for i in range(src_len)]
                             break
                         elif index != -1:
-                            rule_index[-1][-1][index + offsets[i]-1] = 1
+                            rule_index[-1][-1][index + offsets[i]] = 1
                 else:
                     rule_index[-1][-1][src_len-1] = 1
         high_index_v = Variable(torch.stack(high_index),volatile = self.volatile )
@@ -145,6 +148,11 @@ class DataIterator(object):
    #     del offsets,offsetsY,Batch_t,tgtBatch_t
         tgtBatch = tgtBatch[0:2]
         return srcBatch, tgtBatch, idBatch
+
+    def getTranslation(self,index):
+        startId,endId = self.indexPair[index]
+        srcBatch, tgtBatch, idBatch = self.__getitem__(index)
+        return srcBatch, tgtBatch, idBatch,self.source[startId:endId]
 
     def __len__(self):
         return self.numBatches

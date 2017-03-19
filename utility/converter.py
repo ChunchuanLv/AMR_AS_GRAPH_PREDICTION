@@ -64,7 +64,7 @@ def amr_to_seq(amr,snt_token,lemma,rl,high_freq):   #high_freq should be a dict(
             lemma_list = []
             if (c in rule_produced ):
                 lemma_list = tuple_list_convert(rule_produced[c],cat,amr,snt_token)  #[(lemma,rule,index)]
-            if (c in high_freq):
+            elif (c in high_freq):
                 if cat == Rule_Frame:
                     lemma_list.append((re.sub(RE_FRAME_NUM,"",c.__str__()),HIGH,-1))
                 else:
