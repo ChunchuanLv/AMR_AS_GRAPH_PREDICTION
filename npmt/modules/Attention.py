@@ -62,7 +62,6 @@ class LocalAttention(nn.Module):
         super(LocalAttention, self).__init__()
         self.dim = dim
         self.linear_in = nn.Linear(dim, dim, bias=False)
-        self.linear_context = nn.Linear(dim, 1, bias=False)
         self.sm = nn.Softmax()
         self.linear_out = nn.Linear(dim*2, dim, bias=False)
         self.tanh = nn.Tanh()
@@ -82,8 +81,6 @@ class LocalAttention(nn.Module):
         # Get attention
         attn = torch.bmm(context, targetT).squeeze(2)  # batch x sourceL
       #  del targetT
-        linear_context =  self.linear_context(context.view(-1,self.dim)).view(context.size(0),context.size(1))
-        attn = attn +linear_context# batch x sourceL
         if self.mask is not None:
             attn.data.masked_fill_(self.mask, -_INF)
         attn = self.sm(attn)   # batch x sourceL

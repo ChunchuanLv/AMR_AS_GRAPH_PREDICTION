@@ -24,7 +24,9 @@ parser.add_argument('-train_from',
 
 ## Model options
 
-parser.add_argument('-layers', type=int, default=1,
+parser.add_argument('-enlayers', type=int, default=2,
+                    help='Number of layers in the LSTM encoder/decoder')
+parser.add_argument('-delayers', type=int, default=1,
                     help='Number of layers in the LSTM encoder/decoder')
 parser.add_argument('-srl', type=bool, default=False,
                     help='Wheather it is SRL stage')
@@ -84,11 +86,11 @@ parser.add_argument('-max_grad_norm', type=float, default=1,
                     renormalize it to have the norm equal to max_grad_norm""")
 parser.add_argument('-dropout', type=float, default=0.5,
                     help='Dropout probability; applied between LSTM stacks.')
-parser.add_argument('-learning_rate_decay', type=float, default=0.998,
+parser.add_argument('-learning_rate_decay', type=float, default=0.98,
                     help="""Decay learning rate by this much if (i) perplexity
                     does not decrease on the validation set or (ii) epoch has
                     gone past the start_decay_at_limit""")
-parser.add_argument('-start_decay_at', default=8,
+parser.add_argument('-start_decay_at', default=5,
                     help="Start decay after this epoch")
 parser.add_argument('-curriculum', action="store_true",
                     help="""For this many epochs, order the minibatches based
@@ -103,6 +105,7 @@ parser.add_argument('-pre_word_vecs_dec',
                     pretrained word embeddings on the decoder side.
                     See README for specific formatting instructions.""")
 
+
 # GPU
 parser.add_argument('-gpus',  nargs='*',default=[1], type=int,
                     help="Use CUDA")
@@ -114,6 +117,7 @@ parser.add_argument('-log_interval', type=int, default=50,
 
 opt = parser.parse_args()
 
+opt_str = str(opt.enlayers)+":"+str(opt.delayers)+":"+str(opt.rnn_size)+":"+str(opt.cat_dim)+":"+str(opt.gpus[0])
 opt.cuda = len(opt.gpus)
 
 print(opt)
@@ -134,7 +138,7 @@ def NMTCriterion(vocabSize):
 
 def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
     ''' high_prob:  tgt_len x batch x src_len x n_freq  ,
-        rule_prob:  tgt_len x batch x src_len,  
+        rule_prob:  tgt_len x batch x src_len,
         cat_prob:   tgt_len x  batch x src_len x n_cat
         high_index: tgt_len x batch_size        (0 ... n_high-1)
         rule_index: tgt_len x batch_size x src_len  (0 1)
@@ -186,13 +190,6 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
  #   print (effective.size())
     posterior = effective/effective.sum(1).expand(total_size,src_len)
     posterior = posterior.view(tgt_len,batch_size,src_len)
-    if not eval and False:
-        loss.backward()
-        grad = torch.cat((high_prob.grad.data,rule_prob.grad.data.unsqueeze(2),cat_likeli.grad.data),2).view(tgt_len,batch_size,src_len,-1)
-    #    del high_prob,rule_prob,cat_prob,effective,effective_cat,effective_lemma
-        return loss,num_words,posterior,grad
-
- #   del high_prob,rule_prob,cat_prob,effective,effective_cat,effective_lemma
     return loss,num_words,posterior
 
 def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,eval):
@@ -247,7 +244,7 @@ def eval(model, data,dicts):
     for i in range(len(data)):
         
         x = data[i]
-        srcBatch, tgtBatch, idBatch = x
+        srcBatch, tgtBatch, idBatch ,mask= x
         high_index,lemma_index = idBatch
         tgtBatch_t = tgtBatch[:,1:]
         high_index_t = high_index[1:]
@@ -287,7 +284,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             model.zero_grad()
 
             x = trainData[batchIdx]
-            srcBatch, tgtBatch, idBatch = x
+            srcBatch,tgtBatch, idBatch,mask = x
             high_index,lemma_index = idBatch
             tgtBatch_t = tgtBatch[:,1:]
             high_index_t = high_index[1:]
@@ -336,7 +333,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
         valid_loss = eval(model, validData,dicts)
         valid_ppl = math.exp(valid_loss)
         print('Validation perplexity: %g' % valid_ppl)
-
+        print (opt_str)
         #  (3) maybe update the learning rate
         if opt.optim == 'sgd':
             optim.updateLearningRate(valid_loss, epoch)
@@ -352,7 +349,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             print('Validation perplexity: %g' % valid_ppl)
             print("Epoch: ", epoch)
             torch.save(checkpoint,
-                       'model/valid_best.pt' )
+                       'model/'+opt_str+'valid_best.pt' )
             valid_loss_low = valid_loss
 
 def main():
@@ -363,8 +360,9 @@ def main():
     rel_dict = Dict("data/rel_dict")
     concept_dict = Dict("data/concept_dict")
     category_dict = Dict("data/category_dict")
-    
 
+    if opt.cuda:
+        cuda.set_device(opt.gpus[0])
     word_dict.load()
     lemma_dict.load()
     pos_dict.load()
@@ -382,15 +380,7 @@ def main():
     dicts["category_dict"] = category_dict
     concept_ls = [id for id in concept_dict.idxToLabel.keys()]
     dicts["concept_ls"] = concept_ls
-    
-    training_data = DataIterator(trainingFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
-    
-    dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
-    
-    print("word_dict %d lemma_dict %d pos_dict %d ner_dict %d concept_dict %d "% (len(word_dict),len( lemma_dict),len( pos_dict),len( ner_dict ),len(concept_dict)))
-    print(' * number of training sentences. %d' %
-          len(training_data.src))
-    print(' * maximum total size. %d' % opt.total_size)
+
     print('Building model...')
     valid_loss = math.exp(100)
     if opt.train_from is None:
@@ -417,11 +407,22 @@ def main():
             lr_decay=opt.learning_rate_decay,
             start_decay_at=opt.start_decay_at
         )
-        
+
+        training_data = DataIterator(trainingFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
+
+        dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+
+        print("word_dict %d lemma_dict %d pos_dict %d ner_dict %d concept_dict %d "% (len(word_dict),len( lemma_dict),len( pos_dict),len( ner_dict ),len(concept_dict)))
+        print(' * number of training sentences. %d' %
+              len(training_data.src))
+        print(' * maximum total size. %d' % opt.total_size)
  #       print ("posterior[:,0,:]",posterior[:,0,:])
     else:
         print('Loading from checkpoint at %s' % opt.train_from)
         checkpoint = torch.load(opt.train_from)
+
+        if opt.cuda:
+            cuda.set_device(opt.gpus[0])
         NMTModel = checkpoint['model']
         if opt.cuda:
             NMTModel.cuda()
@@ -429,10 +430,20 @@ def main():
             NMTModel.cpu()
         optim = checkpoint['optim']
         opt.start_epoch = checkpoint['epoch'] + 1
+
+        training_data = DataIterator(trainingFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
+
+        dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+
+        print("word_dict %d lemma_dict %d pos_dict %d ner_dict %d concept_dict %d "% (len(word_dict),len( lemma_dict),len( pos_dict),len( ner_dict ),len(concept_dict)))
+        print(' * number of training sentences. %d' %
+              len(training_data.src))
+        print(' * maximum total size. %d' % opt.total_size)
+
         valid_loss = eval(NMTModel, dev_data,dicts)
         valid_ppl = math.exp(valid_loss)
         print('Validation perplexity: %g' % valid_ppl)
-        
+
     nParams = sum([p.nelement() for p in NMTModel.parameters()])
     print('* number of parameters: %d' % nParams)
 

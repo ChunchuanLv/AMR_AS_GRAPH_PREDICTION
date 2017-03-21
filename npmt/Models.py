@@ -7,7 +7,7 @@ from utility.constants import *
 class Encoder(nn.Module):
 
     def __init__(self, opt, embs):
-        self.layers = opt.layers
+        self.layers = opt.enlayers
         self.num_directions = 2 if opt.brnn else 1
         print ("self.num_directions ",self.num_directions )
         assert opt.rnn_size % self.num_directions == 0
@@ -18,7 +18,7 @@ class Encoder(nn.Module):
             inputSize += 1
         super(Encoder, self).__init__()
         self.rnn = nn.LSTM(inputSize, self.hidden_size,
-                        num_layers=opt.layers,
+                        num_layers=opt.enlayers,
                         dropout=opt.dropout,
                         bidirectional=opt.brnn)
         self.word_lut = embs["word_lut"]
@@ -102,15 +102,22 @@ class Generator(nn.Module):
         
         self.cat_non_linear  =  nn.Linear(self.cat_lut.embedding_dim,opt.rnn_size)
         self.cat_non_linear.weight.data.normal_(0,math.sqrt(2.0/(self.cat_lut.embedding_dim*opt.rnn_size)))
-        self.lemma_non_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
-        self.lemma_non_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
-                                
+        self.lemma_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
+        self.lemma_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
+
+        self.rule_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
+        self.rule_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
+
+     #   self.rule_bias = nn.Sequential( nn.Linear(opt.rnn_size,1),nn.Sigmoid())
+
         self.softmax = nn.Softmax()
        
         if self.cuda:
             self.cat_non_linear = self.cat_non_linear.cuda()
-            self.lemma_non_linear = self.lemma_non_linear.cuda()
+            self.rule_linear = self.rule_linear.cuda()
+            self.lemma_linear = self.lemma_linear.cuda()
             self.softmax = self.softmax.cuda()
+     #       self.rule_bias =  self.rule_bias.cuda()
             
         self.concept_ids = Variable(torch.LongTensor(concept_ls).view(1,len(concept_ls)),requires_grad=False)
         self.n_freq = len(concept_ls)
@@ -146,13 +153,14 @@ class Generator(nn.Module):
    #     del cat_emb
    #     print ("cat_prob",cat_prob.sum(3).squeeze(3).sum(2).squeeze(2))
 
-        high_con_embed = self.lemma_non_linear(self.lemma_lut(self.concept_ids).view(-1 ,self.lemma_lut.embedding_dim)).t().contiguous()
+
+        high_con_embed = self.lemma_linear(self.lemma_lut(self.concept_ids).view(-1 ,self.lemma_lut.embedding_dim)).t().contiguous()
     
  #       print ("output",output.view(tgt_len*batch_size*src_len,dim).size())
         high_con_score = output.view(-1,dim).mm(high_con_embed).view(tgt_len,batch_size,src_len,self.n_freq)
 
 
-        source_lemma_embed= self.lemma_non_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
+        source_lemma_embed= self.rule_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
   #      print ("source_lemma_embed",source_lemma_embed.size())
         
         outputT = output.transpose(0,2).contiguous().view(-1,tgt_len,dim)
@@ -176,7 +184,7 @@ class Generator(nn.Module):
 class Decoder(nn.Module):
 
     def __init__(self, opt, embs,concept_ls):
-        self.layers = opt.layers
+        self.layers = opt.delayers
         self.input_feed = opt.input_feed
         input_size = opt.lemma_dim + opt.cat_dim
         self.input_feed = False
@@ -193,12 +201,12 @@ class Decoder(nn.Module):
         self.cat_lut = embs["cat_lut"]
         
         
-        self.rnn = StackedLSTM(opt.layers, input_size, opt.rnn_size , opt.dropout)
+        self.rnn = StackedLSTM(opt.delayers, input_size, opt.rnn_size , opt.dropout)
         self.attn = LocalAttention(opt.rnn_size )
         self.dropout = nn.Dropout(opt.dropout)
         self.Tensor = torch.FloatTensor
 
-
+        self.cuda = opt.cuda
         for m in self.modules():
             if isinstance(m, nn.Embedding):
                 n = m.embedding_dim
@@ -227,7 +235,7 @@ class Decoder(nn.Module):
     
     
     
-    def forward(self, tgt, src ,hidden, context, init_output):
+    def forward(self, tgt, src ,hidden, context, init_output,mask):
         '''input:n_features,seq_len,batch
             emb:seq_len,batch,dim
             context: sourceL, batch, dim
@@ -242,13 +250,15 @@ class Decoder(nn.Module):
         # self.input_feed=False
         outputs = []
         output = init_output
+
+        self.attn.applyMask(mask)
         attns = []
         for i, emb_t in enumerate(emb.chunk(emb.size(0), dim=0)):  #chunck make tensor list
             emb_t = emb_t.squeeze(0)         #emb_t: batch,dim
             if self.input_feed:
                 emb_t = torch.cat([emb_t, output], 1)  #emb_t: batch,dim+(out_dim)  replacing output with posterior context
 
-            output, hidden = self.rnn(emb_t, hidden)   #output:batch,dim 
+            output, hidden = self.rnn(emb_t, hidden)   #output:batch,dim
             outputContexted, attn = self.attn(output, context)   #outputContexted: batch , sourceL , [dim + context_dim]/2== context_dim
             outputContexted = self.dropout(outputContexted)
             if self.input_feed:
@@ -275,6 +285,7 @@ class NMTModel(nn.Module):
         word_dict = self.dicts["word_dict"]
         word_embedding = self.embs["word_fix_lut"]
         word_initialized = 0
+
         with open(embed_path, 'r') as f:
             for line in f:
                 parts = line.rstrip().split()
@@ -379,6 +390,7 @@ class NMTModel(nn.Module):
     def forward(self, input):
         src = input[0]
         tgt = input[1][:,:-1].contiguous()  #remove BOS
+        mask = input[3]
    #     print (tgt.size())
         enc_hidden, context = self.encoder(src)
   #      print (enc_hidden[0].size(),enc_hidden[1].size(),context.size())
@@ -388,7 +400,7 @@ class NMTModel(nn.Module):
                       self._fix_enc_hidden(enc_hidden[1]))
     #    print (enc_hidden[0].size(),enc_hidden[1].size())
 
-        out, attns,dec_hidden = self.decoder(tgt, src , enc_hidden, context, init_output)
+        out, attns,dec_hidden = self.decoder(tgt, src , enc_hidden, context, init_output,mask)
         if self.generate:
             out = self.generator(attns,out,tgt,src[LEMMA])
             return out

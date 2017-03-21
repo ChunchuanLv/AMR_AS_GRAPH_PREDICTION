@@ -9,6 +9,7 @@ from npmt.Models import *
 from npmt.data_iterator import *
 
 
+from torch import cuda
 import argparse
 
 import matplotlib.pyplot as plt
@@ -57,6 +58,7 @@ def amr_seq_to_concept_str(amr_seq):
     con_seq.append(EOS_WORD)
     return con_seq
 
+import matplotlib.colors as colors
 class Visualizor(object):
 
     def visualizeOne(self,posterior,src,tgt,amr_ts):
@@ -68,8 +70,10 @@ class Visualizor(object):
         column_labels = tgt
         row_labels = src
         data = posterior.numpy()[:tgt_size,-src_size:]
+
         fig, ax = plt.subplots()
         heatmap = ax.pcolor(data)
+        print (data.sum(1))
         print ("src",len(src))
         print ("amr",len(tgt))
         # put the major ticks at the middle of each cell, notice "reverse" use of dimension
@@ -79,7 +83,8 @@ class Visualizor(object):
         ax.set_xticklabels(row_labels, minor=False)
         ax.set_yticklabels(column_labels, minor=False)
 
-        fig.suptitle(amr_ts, fontsize=14, fontweight='bold')
+     #   plt.tick_params(axis='both', which='major', labelsize=7)
+        plt.suptitle(amr_ts, fontsize=12, fontweight='bold')
         plt.show()
         return None
     def visualizeBatch(self, posterior,source):
@@ -127,11 +132,15 @@ def main():
     concept_ls = [id for id in concept_dict.idxToLabel.keys()]
     dicts["concept_ls"] = concept_ls
 
-    training_data = DataIterator([trainingFilesPath[1]],total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
-
- #   dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
-
     checkpoint = torch.load(opt.train_from)
+
+    if opt.cuda:
+        cuda.set_device(opt.gpus[0])
+
+    training_data = DataIterator([devFilesPath[1]],total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
+
+    dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+
     model = checkpoint['model']
     optim = checkpoint['optim']
     opt.start_epoch = checkpoint['epoch'] + 1
@@ -142,7 +151,7 @@ def main():
 
 
     x = training_data.getTranslation(1)
-    srcBatch, tgtBatch, idBatch,source = x
+    srcBatch, tgtBatch, idBatch,mask,source = x
     out,attns = model.forward(x)
     high_index,lemma_index = idBatch
     tgtBatch_t = tgtBatch[:,1:]

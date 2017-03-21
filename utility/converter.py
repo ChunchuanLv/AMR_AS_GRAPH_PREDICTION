@@ -21,6 +21,8 @@ def tuple_list_convert(tuple_list,cat,amr,snt_token):
     for n,lemma,i,k in tuple_list:
         if cat == n:
             converted.append((lemma,RULE,i))
+        else:
+            print ((cat,n,lemma,RULE,i))
     if (len(converted)==0):
         print (tuple_list,cat,amr,snt_token)
     return converted
@@ -64,7 +66,7 @@ def amr_to_seq(amr,snt_token,lemma,rl,high_freq):   #high_freq should be a dict(
             lemma_list = []
             if (c in rule_produced ):
                 lemma_list = tuple_list_convert(rule_produced[c],cat,amr,snt_token)  #[(lemma,rule,index)]
-            elif (c in high_freq):
+            if (c in high_freq):
                 if cat == Rule_Frame:
                     lemma_list.append((re.sub(RE_FRAME_NUM,"",c.__str__()),HIGH,-1))
                 else:

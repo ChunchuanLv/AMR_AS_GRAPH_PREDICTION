@@ -147,12 +147,18 @@ class DataIterator(object):
 
    #     del offsets,offsetsY,Batch_t,tgtBatch_t
         tgtBatch = tgtBatch[0:2]
-        return srcBatch, tgtBatch, idBatch
+        mask = torch.zeros(idBatch[1].size(1),idBatch[1].size(2)).byte()
+        for i in range(idBatch[1].size(1)):
+            if offsets[i] > 0:
+                mask[i,:offsets[i]] = 1
+        if self.cuda:
+            mask = mask.cuda()
+        return srcBatch, tgtBatch, idBatch,mask
 
     def getTranslation(self,index):
         startId,endId = self.indexPair[index]
-        srcBatch, tgtBatch, idBatch = self.__getitem__(index)
-        return srcBatch, tgtBatch, idBatch,self.source[startId:endId]
+        srcBatch,tgtBatch, idBatch ,mask= self.__getitem__(index)
+        return srcBatch, tgtBatch, idBatch,mask,self.source[startId:endId]
 
     def __len__(self):
         return self.numBatches
