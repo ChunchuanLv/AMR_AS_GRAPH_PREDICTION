@@ -93,6 +93,9 @@ class Generator(nn.Module):
     def __init__(self,opt, embs,dicts):
         super(Generator, self).__init__()
         concept_ls = dicts["concept_ls"]
+        self.rule_first = False
+        if opt.rule_first is not None:
+            self.rule_first =  opt.rule_first
         self.cuda = opt.cuda
         self.dropout = nn.Dropout(opt.dropout)
 
@@ -105,16 +108,17 @@ class Generator(nn.Module):
         self.lemma_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
         self.lemma_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
 
-        self.rule_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
-        self.rule_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
+     #   self.rule_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
+    #    self.rule_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
 
-     #   self.rule_bias = nn.Sequential( nn.Linear(opt.rnn_size,1),nn.Sigmoid())
+        self.sig = nn.Sigmoid()
 
         self.softmax = nn.Softmax()
        
         if self.cuda:
             self.cat_non_linear = self.cat_non_linear.cuda()
-            self.rule_linear = self.rule_linear.cuda()
+            self.sig =  self.sig.cuda()
+        #    self.rule_linear = self.rule_linear.cuda()
             self.lemma_linear = self.lemma_linear.cuda()
             self.softmax = self.softmax.cuda()
      #       self.rule_bias =  self.rule_bias.cuda()
@@ -147,7 +151,6 @@ class Generator(nn.Module):
         cat_emb =self.cat_non_linear( self.cat_lut.weight) .t().contiguous() # dim x n_cat
         cat_likeli = self.softmax(output.view(-1,dim).mm(cat_emb))
         
-     #   cat_prob = torch.bmm(attn.view(-1,1,1), cat_likeli.view(-1,1,cat_emb.size(1)))
         cat_likeli = cat_likeli.view(tgt_len,batch_size,src_len,cat_emb.size(1))
 
    #     del cat_emb
@@ -157,19 +160,23 @@ class Generator(nn.Module):
         high_con_embed = self.lemma_linear(self.lemma_lut(self.concept_ids).view(-1 ,self.lemma_lut.embedding_dim)).t().contiguous()
     
  #       print ("output",output.view(tgt_len*batch_size*src_len,dim).size())
-        high_con_score = output.view(-1,dim).mm(high_con_embed).view(tgt_len,batch_size,src_len,self.n_freq)
+        high_con_score = output.view(-1,dim).mm(high_con_embed).view(-1,self.n_freq)#.view(tgt_len,batch_size,src_len,self.n_freq)
 
 
-        source_lemma_embed= self.rule_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
-  #      print ("source_lemma_embed",source_lemma_embed.size())
+
+        source_lemma_embed= self.lemma_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
+     #   print ("source_lemma_embed",source_lemma_embed.size())
         
         outputT = output.transpose(0,2).contiguous().view(-1,tgt_len,dim)
-        rule_score = outputT.bmm(source_lemma_embed.view(-1,dim,1)).exp_().view(src_len,batch_size,tgt_len,1).transpose(0,2)
-
- #       del source_lemma_embed
-        total_score = torch.cat((high_con_score,rule_score),3).view(-1,self.n_freq+1)
+        rule_score = outputT.bmm(source_lemma_embed.view(-1,dim,1)).view(src_len,batch_size,tgt_len,1).transpose(0,2).contiguous().view(-1,1)
+        if  self.rule_first:
+            rule_p = self.sig(rule_score.view(-1,1,1))
+            high_likeli = self.softmax(high_con_score)
+            high_p = torch.bmm(1-rule_p,high_likeli.view(tgt_len*batch_size*src_len,1,self.n_freq)).view(-1,self.n_freq)
         
-        lemma_likeli = self.softmax(total_score)
+            lemma_likeli = torch.cat((high_p,rule_p),1).view(-1,self.n_freq+1)
+        else:
+            lemma_likeli = self.softmax(torch.cat((rule_score,high_con_score),1)).view(-1,self.n_freq+1)
         
    #     print ("lemma_likeli",lemma_likeli.size())
         
@@ -203,6 +210,7 @@ class Decoder(nn.Module):
         
         self.rnn = StackedLSTM(opt.delayers, input_size, opt.rnn_size , opt.dropout)
         self.attn = LocalAttention(opt.rnn_size )
+        self.attn.setFlat(opt.flat)
         self.dropout = nn.Dropout(opt.dropout)
         self.Tensor = torch.FloatTensor
 
@@ -277,15 +285,17 @@ class Decoder(nn.Module):
 
 
 
-
-            
+import spacy
+nlp = spacy.load('en')     
 class NMTModel(nn.Module):
     
     def initial_embedding(self):
         word_dict = self.dicts["word_dict"]
+        lemma_dict = self.dicts["lemma_dict"]
         word_embedding = self.embs["word_fix_lut"]
+        lemma_embedding = self.embs["lemma_lut"]
         word_initialized = 0
-
+        lemma_initialized = 0
         with open(embed_path, 'r') as f:
             for line in f:
                 parts = line.rstrip().split()
@@ -295,7 +305,17 @@ class NMTModel(nn.Module):
              #       print (parts,tensor.size())
                     word_embedding.weight.data[id].copy_(tensor)
                     word_initialized += 1
+                    
+                id = lemma_dict[[i.lemma_ for i in nlp(parts[0])][0]]
+                if id != UNK and id < lemma_embedding.num_embeddings and self.initialize_lemma:
+                    tensor = torch.FloatTensor([float(s) for s in parts[1:]]).type_as(lemma_embedding.weight.data)
+             #       print (parts,tensor.size())
+                    lemma_embedding.weight.data[id].copy_(tensor)
+                    lemma_initialized += 1
+                    
+                    
         print ("word_initialized", word_initialized)
+        print ("lemma_initialized", lemma_initialized)
     def to_parallel(self,opt):
         self.encoder =  torch.nn.DataParallel(self.encoder, device_ids=opt.gpus)
         self.decoder =  torch.nn.DataParallel(self.decoder, device_ids=opt.gpus)
@@ -304,7 +324,9 @@ class NMTModel(nn.Module):
         super(NMTModel, self).__init__()
         self.embs = dict()
         self.dicts = dicts
-        
+        self.initialize_lemma = False
+        if  opt.initialize_lemma is not None:
+            self.initialize_lemma =opt.initialize_lemma
         self.word_lut = nn.Embedding(dicts["word_dict"].size(),
                                   opt.word_dim,
                                   padding_idx=PAD)

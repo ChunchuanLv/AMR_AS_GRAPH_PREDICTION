@@ -49,7 +49,42 @@ def chooseOne(i,output_concepts,snt_len):
     return ([output_concepts[i][0][min_index]],output_concepts[i][1],output_concepts[i][2])
 
 def amr_to_seq(amr,snt_token,lemma,rl,high_freq):   #high_freq should be a dict()
-    rel_concepts = amr.dfs()
+    rel_concepts = amr.dfs_index_re()
+    rule_produced = rl.apply_all_sentence(snt_token,lemma)
+    output_concepts = []
+    used_index = []
+    i = 0
+    for rel_con in rel_concepts:
+        r = rel_con[0]
+        c = rel_con[1]
+        first_i = rel_con[2]
+        cat = categorize(c)
+        if cat == Rule_Frame:
+            c = Concept(re.sub(RE_FRAME_NUM,"-99",c.__str__()))
+        else:
+            c = c
+        if r != ":wiki":
+            lemma_list = []
+            if (c in rule_produced ):
+                lemma_list = tuple_list_convert(rule_produced[c],cat,amr,snt_token)  #[(lemma,rule,index)]
+            if (c in high_freq):
+                if cat == Rule_Frame:
+                    lemma_list.append((re.sub(RE_FRAME_NUM,"",c.__str__()),HIGH,-1))
+                else:
+                    lemma_list.append((c.__str__(),HIGH,-1))
+            if (len(lemma_list)==0) :
+                lemma_list = [(UNK_WORD,LOW,-2)]
+            if cat == Rule_Frame:
+                output_concepts.append( (lemma_list,  cat,  r,  re.sub(RE_FRAME_NUM,"",c.__str__()),first_i))
+            else:
+                output_concepts.append( (lemma_list,  cat,  r,  c.__str__(),first_i))
+            i += 1
+          #  if (output_concepts[-1]==[]):
+         #       output_concepts[-1].append((categorize(c),[]))
+    return output_concepts   #[[[lemma1,lemma2],category,relation]]
+
+def fake_amr_to_seq(amr,snt_token,lemma,rl,high_freq):   #high_freq should be a dict()
+    rel_concepts = amr.bfs()
     rule_produced = rl.apply_all_sentence(snt_token,lemma)
     output_concepts = []
     used_index = []
@@ -80,8 +115,7 @@ def amr_to_seq(amr,snt_token,lemma,rl,high_freq):   #high_freq should be a dict(
             i += 1
           #  if (output_concepts[-1]==[]):
          #       output_concepts[-1].append((categorize(c),[]))
-    return output_concepts   #[[[lemma1,lemma2],category,relation]]
-
+    return output_concepts   #[[[
 def extract_ne_v(amr,v_e,v_n):
     wiki = AMRNumber("-")
     names = []

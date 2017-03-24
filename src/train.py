@@ -13,7 +13,6 @@ import time
 parser = argparse.ArgumentParser(description='train.py')
 
 ## Data options
-
 parser.add_argument('-save_model', default='model',
                     help="""Model filename (the model will be saved as
                     <save_model>_epochN_PPL.pt where PPL is the
@@ -22,8 +21,12 @@ parser.add_argument('-train_from',
                     help="""If training from a checkpoint then this is the
                     path to the pretrained model.""")
 
-## Model options
+## Model optionsinitialize_lemma
 
+parser.add_argument('-rule_first', type=bool, default=False,
+                    help='Wheather seperate generator model for rule')
+parser.add_argument('-initialize_lemma', type=bool, default=False,
+                    help='Wheather initialize_lemma')
 parser.add_argument('-enlayers', type=int, default=2,
                     help='Number of layers in the LSTM encoder/decoder')
 parser.add_argument('-delayers', type=int, default=1,
@@ -64,20 +67,22 @@ parser.add_argument('-brnn_merge', default='concat',
 
 parser.add_argument('-total_size', type=int, default=1024,
                     help='Maximum batch size')
+parser.add_argument('-flat', type=bool, default=False,
+                    help='whether use flat prior')
 parser.add_argument('-max_generator_batches', type=int, default=16,
                     help="""Maximum batches of words in a sequence to run
                     the generator on in parallel. Higher is faster, but uses
                     more memory.""")
-parser.add_argument('-epochs', type=int, default=100,
+parser.add_argument('-epochs', type=int, default=80,
                     help='Number of training epochs')
 parser.add_argument('-start_epoch', type=int, default=1,
                     help='The epoch from which to start')
 parser.add_argument('-param_init', type=float, default=0.1,
                     help="""Parameters are initialized over uniform distribution
                     with support (-param_init, param_init)""")
-parser.add_argument('-optim', default='sgd',
+parser.add_argument('-optim', default='adam',
                     help="Optimization method. [sgd|adagrad|adadelta|adam]")
-parser.add_argument('-learning_rate', type=float, default=1,
+parser.add_argument('-learning_rate', type=float, default=.01,
                     help="""Starting learning rate. If adagrad/adadelta/adam is
                     used, then this is the global learning rate. Recommended
                     settings: sgd = 1, adagrad = 0.1, adadelta = 1, adam = 0.1""")
@@ -117,7 +122,7 @@ parser.add_argument('-log_interval', type=int, default=50,
 
 opt = parser.parse_args()
 
-opt_str = str(opt.enlayers)+":"+str(opt.delayers)+":"+str(opt.rnn_size)+":"+str(opt.cat_dim)+":"+str(opt.gpus[0])
+opt_str = "enlayers_"+str(opt.enlayers)+"_delayers_"+str(opt.delayers)+"_rnn_size_"+str(opt.rnn_size)+"_cat_dim_"+str(opt.cat_dim)+"_gpus_"+str(opt.gpus[0])+"_flat_"+str(opt.flat)+"_rule_first_"+str(opt.rule_first)+"_initialize_lemma_"+str(opt.initialize_lemma)
 opt.cuda = len(opt.gpus)
 
 print(opt)
@@ -136,7 +141,7 @@ def NMTCriterion(vocabSize):
         crit.cuda()
     return crit
 
-def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
+def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regularizor):
     ''' high_prob:  tgt_len x batch x src_len x n_freq  ,
         rule_prob:  tgt_len x batch x src_len,
         cat_prob:   tgt_len x  batch x src_len x n_cat
@@ -190,22 +195,24 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,eval):
  #   print (effective.size())
     posterior = effective/effective.sum(1).expand(total_size,src_len)
     posterior = posterior.view(tgt_len,batch_size,src_len)
+    loss += regularizor(posterior)
     return loss,num_words,posterior
 
-def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index,generator,dicts,eval):
+def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, reBatch,high_index,lemma_index,generator,dicts,eval):
     ''' high_index: tgt_len x batch_size        (0 ... n_high-1)
         rule_index: tgt_len x batch_size x src_len  (0 1)
         cat_batch:  tgt_len x batch_size
         lemma_batch:  tgt_len x batch_size
         posterior:  tgt_len x batch x src_len
+        reBatch ; tgt_len x batch
     '''
     loss,num_words = 0,0
     outputs = Variable(outputs.data, requires_grad=(not eval), volatile=eval).contiguous()
     batch_size = outputs.size(1)
 
 
-
-
+    def poserior_regularizor(posterior=0,alpha=0,bind_index=0):
+        return 0
     outputs_split = torch.split(outputs, opt.max_generator_batches,0)
     attns_split =  torch.split(attns, opt.max_generator_batches,0)
     lemma_batch = tgtBatch[0]
@@ -220,7 +227,7 @@ def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, high_index,lemma_index
 
         out = generator(attn_t,out_t,srcBatch[LEMMA])
   #      print ([i.size() for i in [out,out_t, tgt_t ,attn_t,high_index_t,lemma_index_t]])
-        loss_t,num_words_t,posterior = my_loss(out,high_index_t,lemma_index_t,lemma_t,cat_t,len(dicts["concept_ls"]),len(dicts["category_dict"]),eval)
+        loss_t,num_words_t,posterior = my_loss(out,high_index_t,lemma_index_t,lemma_t,cat_t,len(dicts["concept_ls"]),len(dicts["category_dict"]),poserior_regularizor)
 
         loss += loss_t.data[0]
         num_words += num_words_t
@@ -244,7 +251,7 @@ def eval(model, data,dicts):
     for i in range(len(data)):
         
         x = data[i]
-        srcBatch, tgtBatch, idBatch ,mask= x
+        srcBatch, tgtBatch, idBatch ,mask,reBatch= x
         high_index,lemma_index = idBatch
         tgtBatch_t = tgtBatch[:,1:]
         high_index_t = high_index[1:]
@@ -256,7 +263,7 @@ def eval(model, data,dicts):
    #     print ("out",out.size())
 
    #     print ("in eval tgtBatch",tgtBatch.size())
-        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch, high_index_t,lemma_index_t,generator,dicts,True)
+        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,True)
 
         total_loss += loss
         total_words += num_words
@@ -264,7 +271,7 @@ def eval(model, data,dicts):
     model.train()
     return total_loss / total_words
 
-def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.exp(100)):
+def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.exp(100),best_epoch = 0):
     print(model)
     model.train()
     start_time = time.time()
@@ -284,7 +291,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             model.zero_grad()
 
             x = trainData[batchIdx]
-            srcBatch,tgtBatch, idBatch,mask = x
+            srcBatch,tgtBatch, idBatch,mask,reBatch = x
             high_index,lemma_index = idBatch
             tgtBatch_t = tgtBatch[:,1:]
             high_index_t = high_index[1:]
@@ -292,7 +299,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             out,attns = model.forward(x)
      #       print ("trainModel",srcBatch.size())
             generator = model.generator
-            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch, high_index_t,lemma_index_t,generator,dicts,False)
+            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,False)
        #     print ("in trainModel tgtBatch",tgtBatch.size())
          #   print ("out",out.size())
 
@@ -350,7 +357,23 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             print("Epoch: ", epoch)
             torch.save(checkpoint,
                        'model/'+opt_str+'valid_best.pt' )
+
+        if (valid_loss<valid_loss_low):
+            #  (4) drop a checkpoint
+            checkpoint = {
+                'model': model,
+                'opt': opt,
+                'epoch': epoch,
+                'optim': optim,
+            }
+            print ("saving")
+            torch.save(checkpoint,
+                       'model/'+opt_str+'valid_best.pt' )
             valid_loss_low = valid_loss
+            best_epoch = epoch
+            
+        print('Best Validation perplexity: %g' % math.exp(valid_loss_low))
+        print("Epoch: ", best_epoch)
 
 def main():
     word_dict = Dict("data/word_dict")
@@ -420,9 +443,9 @@ def main():
     else:
         print('Loading from checkpoint at %s' % opt.train_from)
         checkpoint = torch.load(opt.train_from)
-
+        optt = checkpoint["opt"]
         if opt.cuda:
-            cuda.set_device(opt.gpus[0])
+            cuda.set_device(optt.gpus[0])
         NMTModel = checkpoint['model']
         if opt.cuda:
             NMTModel.cuda()

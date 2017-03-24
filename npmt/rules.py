@@ -358,7 +358,7 @@ class rules:
         rule_produced_indexed = self.apply_all_sentence(snt_token,lemma)
         for con in targets:
             if con in rule_produced_indexed:
-                for n,content,index in  rule_produced_indexed[con]:
+                for n,content,index,_ in  rule_produced_indexed[con]:
                     if categorize(con) == n:
                         self.add_lemma_freq(content,re.sub(self.RE_FRAME_NUM,"",con.__str__()), n == Rule_Frame)
                     

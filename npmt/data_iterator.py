@@ -6,8 +6,9 @@ from torch.autograd import Variable
 
 class DataIterator(object):
 
-    def __init__(self, filePathes,total_size = 256,cuda = True,volatile = False ,dicts =None):
+    def __init__(self, filePathes,total_size = 256,cuda = True,volatile = False ,dicts =None,alpha = 0.25):
         self.totalSize = total_size
+        self.alpha = alpha  #unk with alpha/(freq + alpha)
         self.cuda = cuda
         self.volatile = volatile
         self.concept_dict = dicts["concept_dict"]
@@ -36,13 +37,17 @@ class DataIterator(object):
         self.all = sorted(self.all, key=lambda x: x[0])
 
         self.tgt = []
-        self.index = []
+        self.src_index = []
+        self.re_entrency_index = []
+        self.src_freq = []
         self.source = []
         for d in self.all:
             self.src.append(d[1])
             self.tgt.append(d[2])
-            self.index.append(d[3])
-            self.source.append(d[4])
+            self.src_index.append(d[3][0])
+            self.re_entrency_index.append(torch.LongTensor(d[3][1]))
+            self.src_freq.append(torch.LongTensor(d[4]))
+            self.source.append(d[5])
         self.indexPair = []
         total_len = 0
         initial_index = 0
@@ -58,7 +63,7 @@ class DataIterator(object):
             
     #return shape sentence_len, 4
     def read_sentence(self,data):
-        self.all.append((len(data["snt_id"]),torch.LongTensor([data["snt_id"],data["lemma_id"],data["pos_id"],data["ner_id"]]).t().contiguous(),torch.LongTensor(data["amr_id"]).contiguous(),data["index"],
+        self.all.append((len(data["snt_id"]),torch.LongTensor([data["snt_id"],data["lemma_id"],data["pos_id"],data["ner_id"]]).t().contiguous(),torch.LongTensor(data["amr_id"]).contiguous(),data["index"],data["src_freq"],
                          ( data["snt_token"], data["lemma"],data["amr_seq"],data["amr_t"])))
 
             
@@ -73,8 +78,8 @@ class DataIterator(object):
             self.read_sentence(data)
         return len(all_data)
     
-    #out_each_step : tgt_len x sourceL x batch_size
-    def _batchify(self, data,align_right=False, ):
+    #out_each_step : features x len x batch_size
+    def _batchify(self, data,align_right=False,src_freq =None ):
         max_length = max(x.size(0) for x in data)
         out = data[0].new(len(data), max_length,data[0].size(1)).fill_(PAD)
         offsets = []
@@ -82,8 +87,18 @@ class DataIterator(object):
             data_length = data[i].size(0)
             offset = max_length - data_length if align_right else 0
             offsets.append(offset)
+            
+            if src_freq is not None and not self.volatile:
+                if self.cuda:
+                    f = self.alpha/(src_freq[i].cuda()+self.alpha)
+                else:
+                    f = self.alpha/(src_freq[i]+self.alpha)
+                    
+                unk_mask = torch.bernoulli(f).long()
+                
+                data[i] = data[i]*(1-unk_mask)+unk_mask*data[i].fill(UNK)
             out[i].narrow(0, offset, data_length).copy_(data[i])
-
+        
         out = out.transpose(0,2).contiguous()
         if self.cuda:
             out = out.cuda()
@@ -91,6 +106,24 @@ class DataIterator(object):
         v = Variable(out,volatile = self.volatile)
         return v,offsets,max_length,out
     
+    #out_each_step : tgt_len x batch_size
+    def _batchifyReIndex(self, data,align_right=False, ):
+        max_length = max(x.size(0) for x in data)
+        out = data[0].new(len(data), max_length)
+        offsets = []
+        for i in range(len(data)):
+            data_length = data[i].size(0)
+            offset = max_length - data_length if align_right else 0
+            offsets.append(offset)
+            out[i].fill_(data_length)    #default to the first PAD
+            out[i].narrow(0, offset, data_length).copy_(data[i])
+        
+        out = out.t().contiguous()
+        if self.cuda:
+            out = out.cuda()
+
+        v = Variable(out,volatile = self.volatile)
+        return v
     #high_index : tgt_len x batch_size        (0 ... n_high)
     #rule_index : tgt_len x batch_size x src_len  (0 1)
     def _batchifyId(self,data,offsets,src_len,tgt_len,tgtBatch):
@@ -134,7 +167,11 @@ class DataIterator(object):
         if self.tgt:
             tgtBatch,offsetsY,max_lengthY,tgtBatch_t = self._batchify(
                 self.tgt[startId:endId],align_right=False)
-            idBatch = self._batchifyId(self.index[startId:endId],offsets,max_length,max_lengthY,tgtBatch_t)
+            idBatch = self._batchifyId(self.src_index[startId:endId],offsets,max_length,max_lengthY,tgtBatch_t)
+            
+            reBatch = self._batchifyReIndex(
+                self.re_entrency_index[startId:endId],align_right=False)
+            
         else:
             tgtBatch = None
             idBatch = None
@@ -147,18 +184,21 @@ class DataIterator(object):
 
    #     del offsets,offsetsY,Batch_t,tgtBatch_t
         tgtBatch = tgtBatch[0:2]
+        batch = tgtBatch.size(2)
+        tgtlen = tgtBatch.size(1)
+        
         mask = torch.zeros(idBatch[1].size(1),idBatch[1].size(2)).byte()
         for i in range(idBatch[1].size(1)):
             if offsets[i] > 0:
                 mask[i,:offsets[i]] = 1
         if self.cuda:
             mask = mask.cuda()
-        return srcBatch, tgtBatch, idBatch,mask
+        return srcBatch, tgtBatch, idBatch,mask,reBatch
 
     def getTranslation(self,index):
         startId,endId = self.indexPair[index]
-        srcBatch,tgtBatch, idBatch ,mask= self.__getitem__(index)
-        return srcBatch, tgtBatch, idBatch,mask,self.source[startId:endId]
+        srcBatch,tgtBatch, idBatch ,mask,reBatch= self.__getitem__(index)
+        return srcBatch, tgtBatch, idBatch,mask,reBatch,self.source[startId:endId]
 
     def __len__(self):
         return self.numBatches

@@ -66,10 +66,12 @@ class LocalAttention(nn.Module):
         self.linear_out = nn.Linear(dim*2, dim, bias=False)
         self.tanh = nn.Tanh()
         self.mask = None
+        self.flat = False
 
     def applyMask(self, mask):
         self.mask = mask
-    
+    def setFlat(self,flat):
+        self.flat = flat
     #contextOuput: batch x sourceL x dim
     def forward(self, input, context):
         """
@@ -82,6 +84,8 @@ class LocalAttention(nn.Module):
         attn = torch.bmm(context, targetT).squeeze(2)  # batch x sourceL
       #  del targetT
         if self.mask is not None:
+            if self.flat:
+                attn.data.fill_(0)
             attn.data.masked_fill_(self.mask, -_INF)
         attn = self.sm(attn)   # batch x sourceL
         input_expanded = input.view(input.size(0),1,input.size(1)).expand(input.size(0),attn.size(1),input.size(1))

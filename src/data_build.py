@@ -13,13 +13,17 @@ import os
 def add_seq_to_dict(dictionary,seq):
     for i in seq:
         dictionary.add(i)
+    dictionary.add(EOS_WORD)
             
 def seq_to_id(dictionary,seq):
     id_seq = []
+    freq_seq = []
     for i in seq:
         id_seq.append(dictionary[i])
+        freq_seq.append(dictionary.frequencies[dictionary[i]])
     id_seq.append(EOS)
-    return id_seq
+    freq_seq.append(dictionary.frequencies[EOS])
+    return id_seq,freq_seq
             
 #id_seq :  [(con_lemma,cat,rel])]
 def amr_seq_to_id(lemma_dict,concept_dict,category_dict,rel_dict,amr_seq):
@@ -31,11 +35,14 @@ def amr_seq_to_id(lemma_dict,concept_dict,category_dict,rel_dict,amr_seq):
 
 #id_seq :  [(con_lemma,cat,[id],rel])]
 def amr_seq_to_index(amr_seq,snt_len):
-    index_seq = [[-2]] #just a dumb
+    src_index_seq = [[-2]] #just a dumb
+    re_entrance_seq = [0]
     for l in amr_seq:
-        index_seq.append([t[2] for t in l[0]]) 
-    index_seq.append([snt_len-1])
-    return index_seq
+        src_index_seq.append([t[2] for t in l[0]]) 
+        re_entrance_seq.append(l[-1]+1)
+    src_index_seq.append([snt_len-1])
+    re_entrance_seq.append(len(re_entrance_seq))
+    return src_index_seq,re_entrance_seq
 
   
 def amr_seq_to_dict(lemma_dict,concept_dict,category_dict,rel_dict,seq):
@@ -69,10 +76,10 @@ def handle_sentence(data,filepath,build_dict,n):
         add_seq_to_dict(ner_dict,ner)         
         amr_seq_to_dict(lemma_dict,concept_dict,category_dict,rel_dict,data["amr_seq"])
     else:
-        data["snt_id"] = seq_to_id(word_dict,snt_token)
-        data["lemma_id"] = seq_to_id(lemma_dict,lemma)
-        data["pos_id"] = seq_to_id(pos_dict,pos)
-        data["ner_id"] = seq_to_id(ner_dict,ner)
+        data["snt_id"],data["src_freq"] = seq_to_id(word_dict,snt_token)
+        data["lemma_id"] = seq_to_id(lemma_dict,lemma)[0]
+        data["pos_id"] = seq_to_id(pos_dict,pos)[0]
+        data["ner_id"] = seq_to_id(ner_dict,ner)[0]
         l = len(data["pos_id"])
         if not ( l == len(data["snt_id"]) and l == len(data["lemma_id"]) and l == len(data["ner_id"])):
             print (l,len(data["snt_id"]),len(data["lemma_id"]),len(data["ner_id"]))
@@ -158,7 +165,7 @@ high_freq_no_99 = [le.__str__().replace("-99","") for le in high_freq.keys()]
 diff = []
 for le in high_freq_no_99:
     if le not in concept_dict:
-        diff.add(le)
+        diff.append(le)
 print(diff)
 print(("processing training set"))
 for filepath in trainingFilesPath:
