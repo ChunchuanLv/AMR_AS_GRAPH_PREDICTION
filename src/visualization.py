@@ -135,16 +135,18 @@ def main():
     checkpoint = torch.load(opt.train_from)
     
     optt = checkpoint['opt']
-    if opt.cuda:
+    if optt.cuda:
         cuda.set_device(optt.gpus[0])
 
-    training_data = DataIterator([trainingFilesPath[1]],total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+    training_data = DataIterator([trainingFilesPath[1]],optt,volatile = True,dicts=dicts)
 
-    dev_data = DataIterator([devFilesPath[1]],total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+    dev_data = DataIterator([devFilesPath[1]],optt,volatile = True,dicts=dicts)
 
     model = checkpoint['model']
+    model.eval()
     optim = checkpoint['optim']
-    opt.start_epoch = checkpoint['epoch'] + 1
+    
+    optt.start_epoch = checkpoint['epoch'] + 1
 
     nParams = sum([p.nelement() for p in model.parameters()])
     print('* number of parameters: %d' % nParams)
@@ -160,7 +162,8 @@ def main():
     lemma_index_t = lemma_index[1:]
 #       print ("trainModel",srcBatch.size())
     generator = model.generator
-    loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,True)
+    loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,optt,True)
+
 
     visualizor.visualizeBatch(posterior,source)
 

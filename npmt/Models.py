@@ -93,9 +93,8 @@ class Generator(nn.Module):
     def __init__(self,opt, embs,dicts):
         super(Generator, self).__init__()
         concept_ls = dicts["concept_ls"]
-        self.rule_first = False
-        if opt.rule_first is not None:
-            self.rule_first =  opt.rule_first
+        self.rule_bias =  opt.rule_bias
+        self.lemma_all =  opt.lemma_all
         self.cuda = opt.cuda
         self.dropout = nn.Dropout(opt.dropout)
 
@@ -107,9 +106,9 @@ class Generator(nn.Module):
         self.cat_non_linear.weight.data.normal_(0,math.sqrt(2.0/(self.cat_lut.embedding_dim*opt.rnn_size)))
         self.lemma_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
         self.lemma_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
-
-     #   self.rule_linear = nn.Linear(self.lemma_lut.embedding_dim,opt.rnn_size)
-    #    self.rule_linear.weight.data.normal_(0,math.sqrt(2.0/(self.lemma_lut.embedding_dim*opt.rnn_size)))
+        if self.rule_bias:
+            self.rule_bias_w = nn.Linear(opt.rnn_size,1)
+            self.rule_bias_w.weight.data.normal_(0,math.sqrt(2.0/(opt.rnn_size)))
 
         self.sig = nn.Sigmoid()
 
@@ -118,17 +117,17 @@ class Generator(nn.Module):
         if self.cuda:
             self.cat_non_linear = self.cat_non_linear.cuda()
             self.sig =  self.sig.cuda()
-        #    self.rule_linear = self.rule_linear.cuda()
+      #      self.rule_linear = self.rule_linear.cuda()
             self.lemma_linear = self.lemma_linear.cuda()
             self.softmax = self.softmax.cuda()
-     #       self.rule_bias =  self.rule_bias.cuda()
+            if self.rule_bias:
+                self.rule_bias_w =  self.rule_bias_w.cuda()
             
         self.concept_ids = Variable(torch.LongTensor(concept_ls).view(1,len(concept_ls)),requires_grad=False)
         self.n_freq = len(concept_ls)
         if self.cuda:
             self.concept_ids = self.concept_ids.cuda()
             
-
     def forward(self,attn,output,lemma):
         
         '''attn:   tgt_len x batch x src_len 
@@ -145,8 +144,8 @@ class Generator(nn.Module):
         src_len = attn.size(2)
         dim = output.size(3)
   #      print ("batch_size %.d  tgt_len %.d  src_len %.d dim %.d" % (batch_size,tgt_len,src_len,dim))
-        lemma = lemma.t() #  batch x src_len
-        
+  #      lemma = lemma.t() #  batch x src_len
+     #   print (lemma.size())
     #    print (self.cat_lut.weight.view(1,self.cat_lut.weight.size(0),self.cat_lut.weight.size(1)).size())
         cat_emb =self.cat_non_linear( self.cat_lut.weight) .t().contiguous() # dim x n_cat
         cat_likeli = self.softmax(output.view(-1,dim).mm(cat_emb))
@@ -158,31 +157,37 @@ class Generator(nn.Module):
 
 
         high_con_embed = self.lemma_linear(self.lemma_lut(self.concept_ids).view(-1 ,self.lemma_lut.embedding_dim)).t().contiguous()
-    
+
  #       print ("output",output.view(tgt_len*batch_size*src_len,dim).size())
         high_con_score = output.view(-1,dim).mm(high_con_embed).view(-1,self.n_freq)#.view(tgt_len,batch_size,src_len,self.n_freq)
 
 
 
-        source_lemma_embed= self.lemma_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim))
-     #   print ("source_lemma_embed",source_lemma_embed.size())
-        
-        outputT = output.transpose(0,2).contiguous().view(-1,tgt_len,dim)
-        rule_score = outputT.bmm(source_lemma_embed.view(-1,dim,1)).view(src_len,batch_size,tgt_len,1).transpose(0,2).contiguous().view(-1,1)
-        if  self.rule_first:
-            rule_p = self.sig(rule_score.view(-1,1,1))
-            high_likeli = self.softmax(high_con_score)
-            high_p = torch.bmm(1-rule_p,high_likeli.view(tgt_len*batch_size*src_len,1,self.n_freq)).view(-1,self.n_freq)
-        
-            lemma_likeli = torch.cat((high_p,rule_p),1).view(-1,self.n_freq+1)
+        source_lemma_embed= self.lemma_linear(self.lemma_lut(lemma).view(-1,self.lemma_lut.embedding_dim)).view(src_len,batch_size,dim)  #acting as target
+     #   print ("source_lemma_embed",source_lemma_embed.size())   # 
+        if self.lemma_all and  self.training:
+            source_lemma_embed = source_lemma_embed.transpose(0,1).transpose(1,2).contiguous() #batch x dim  x src
+            outputT = output.transpose(0,1).contiguous().view(-1,src_len*tgt_len,dim) #batch x ( tg x src) x dim
+      #      print (source_lemma_embed.size(),outputT.size())
+            rule_score = outputT.bmm(source_lemma_embed).view(batch_size,tgt_len,src_len,src_len).transpose(0,1).contiguous().view(-1,src_len)  #tg x batch x src x src
         else:
-            lemma_likeli = self.softmax(torch.cat((rule_score,high_con_score),1)).view(-1,self.n_freq+1)
+            outputT = output.transpose(0,2).contiguous().view(-1,tgt_len,dim)  #(src x batch  )x  tg x  x dim
+            rule_score = outputT.bmm(source_lemma_embed.view(-1,dim,1)).view(src_len,batch_size,tgt_len,1).transpose(0,2).contiguous().view(-1,1) #( tg x batch x src ) x 1
+                
+        if  self.rule_bias: 
+            rule_b = self.rule_bias_w(output.view(-1,dim))
+            if (rule_score.size(1) != 1):
+                rule_b = rule_b.expand(*rule_score.size())
+            rule_score_b = rule_score + rule_b
+            lemma_likeli =  self.softmax(torch.cat((high_con_score,rule_score_b),1))
+        else:
+            lemma_likeli = self.softmax(torch.cat((high_con_score,rule_score),1))
         
    #     print ("lemma_likeli",lemma_likeli.size())
         
-        lemma_prob = torch.bmm(attn.view(-1,1,1),lemma_likeli.view(-1,1,self.n_freq+1))
+        lemma_prob = torch.bmm(attn.view(-1,1,1),lemma_likeli.unsqueeze(1))
         
-        lemma_prob = lemma_prob.view(tgt_len,batch_size,src_len,self.n_freq+1)
+        lemma_prob = lemma_prob.view(tgt_len,batch_size,src_len,-1)
 
         out = torch.cat((lemma_prob,cat_likeli),3)
   #      del lemma_prob,lemma_likeli,total_score
@@ -285,11 +290,12 @@ class Decoder(nn.Module):
 
 
 
-import spacy
-nlp = spacy.load('en')     
 class NMTModel(nn.Module):
     
     def initial_embedding(self):
+        if self.initialize_lemma:
+            import spacy
+            nlp = spacy.load('en')     
         word_dict = self.dicts["word_dict"]
         lemma_dict = self.dicts["lemma_dict"]
         word_embedding = self.embs["word_fix_lut"]
@@ -305,13 +311,13 @@ class NMTModel(nn.Module):
              #       print (parts,tensor.size())
                     word_embedding.weight.data[id].copy_(tensor)
                     word_initialized += 1
-                    
-                id = lemma_dict[[i.lemma_ for i in nlp(parts[0])][0]]
-                if id != UNK and id < lemma_embedding.num_embeddings and self.initialize_lemma:
-                    tensor = torch.FloatTensor([float(s) for s in parts[1:]]).type_as(lemma_embedding.weight.data)
-             #       print (parts,tensor.size())
-                    lemma_embedding.weight.data[id].copy_(tensor)
-                    lemma_initialized += 1
+                if self.initialize_lemma:
+                    id = lemma_dict[[i.lemma_ for i in nlp(parts[0])][0]]
+                    if id != UNK and id < lemma_embedding.num_embeddings and self.initialize_lemma:
+                        tensor = torch.FloatTensor([float(s) for s in parts[1:]]).type_as(lemma_embedding.weight.data)
+                 #       print (parts,tensor.size())
+                        lemma_embedding.weight.data[id].copy_(tensor)
+                        lemma_initialized += 1
                     
                     
         print ("word_initialized", word_initialized)

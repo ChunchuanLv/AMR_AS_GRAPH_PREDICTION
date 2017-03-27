@@ -806,62 +806,6 @@ class AMR(DependencyGraph):
             out.append((s[i][0],s[i][1]))
         return out
 
-
-    def bfs(self):
-        '''
-        Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).
-
-        >>> a = AMR('(p / person :ARG0-of (h / hug-01 :ARG0 p :ARG1 p) :mod (s / strange))')
-        >>> # people who hug themselves and are strange
-        >>> print(str(a))
-        (p / person
-            :ARG0-of (h / hug-01
-                :ARG0 p
-                :ARG1 p)
-            :mod (s / strange))
-        '''
-        variables = dict()
-        checkleaf = False
-        s = []
-        for h, r, d in self.triples():
-            if r == ':instance-of':
-                continue
-            if d.is_var():
-
-                if not d in variables:
-                    variables[d] = [r]
-                else:
-                    variables[d].append(r)
-                s.append((r,self._v2c[d],h,d))
-
-            elif d.is_constant() :
-                s.append((r,d,h,d))
-        out = []
-        for i in range(len(s)):
-        #    action = KEEP
-        #    nextH = s[i+1][2]
-        #    if nextH == s[i][2]:
-        #        action = POP
-        #    elif nextH == s[i][3]:
-        #        action = PUSH
-            h = s[i][2]
-            if not h in variables:
-                variables[h] = [i]
-            else:
-                variables[h].append(i)
-
-
-         #       if i<len(s)-1 and d == s[i+1][2]:
-         #           variables[d][s[i+1][0]] +=1
-            out.append((s[i][0],s[i][1]))
-        for h in variables:
-            l = variables[h]
-            if len(l) > 1:
-                for i in range(len(l)-1):
-                    if l[i+1]-l[i] != 1:
-                        print ("double head",h,self)
-
-        return  out
     def __repr__(self):
         return self.__str__()
 

@@ -6,10 +6,10 @@ from torch.autograd import Variable
 
 class DataIterator(object):
 
-    def __init__(self, filePathes,total_size = 256,cuda = True,volatile = False ,dicts =None,alpha = 0.25):
-        self.totalSize = total_size
+    def __init__(self, filePathes,opt,volatile = False ,dicts =None,alpha = 0.25):
+        self.total_size = opt.total_size
         self.alpha = alpha  #unk with alpha/(freq + alpha)
-        self.cuda = cuda
+        self.cuda = opt.cuda
         self.volatile = volatile
         self.concept_dict = dicts["concept_dict"]
         self.lemma_dict = dicts["lemma_dict"]
@@ -24,7 +24,7 @@ class DataIterator(object):
         for i, id_con in enumerate(concept_ls):  #chunck make tensor list
             self.concept_lut[id_con] = i
             
-        if cuda:
+        if self.cuda:
             self.concept_lut = self.concept_lut.cuda()
             self.concept_ids = self.concept_ids.cuda()
             
@@ -46,14 +46,14 @@ class DataIterator(object):
             self.tgt.append(d[2])
             self.src_index.append(d[3][0])
             self.re_entrency_index.append(torch.LongTensor(d[3][1]))
-            self.src_freq.append(torch.LongTensor(d[4]))
+            self.src_freq.append(torch.FloatTensor(d[4]))
             self.source.append(d[5])
         self.indexPair = []
         total_len = 0
         initial_index = 0
         for i,src in enumerate(self.src):
             length = src.size(0)
-            if total_len + length > total_size:
+            if total_len + length > self.total_size:
                 self.indexPair.append((initial_index,i))
                 initial_index = i
                 total_len = 0
@@ -84,20 +84,17 @@ class DataIterator(object):
         out = data[0].new(len(data), max_length,data[0].size(1)).fill_(PAD)
         offsets = []
         for i in range(len(data)):
+            data_t = data[i].clone()
             data_length = data[i].size(0)
             offset = max_length - data_length if align_right else 0
             offsets.append(offset)
             
-            if src_freq is not None and not self.volatile:
-                if self.cuda:
-                    f = self.alpha/(src_freq[i].cuda()+self.alpha)
-                else:
-                    f = self.alpha/(src_freq[i]+self.alpha)
+            if src_freq  and not self.volatile:
+                f = self.alpha/(src_freq[i]+self.alpha)
                     
-                unk_mask = torch.bernoulli(f).long()
-                
-                data[i] = data[i]*(1-unk_mask)+unk_mask*data[i].fill(UNK)
-            out[i].narrow(0, offset, data_length).copy_(data[i])
+                unk_mask = torch.bernoulli(f).long().unsqueeze(1).expand(data_length,data[i].size(1))
+                data_t = data_t*(1-unk_mask)+unk_mask*data_t.new(data_length,data[i].size(1)).fill_(UNK)
+            out[i].narrow(0, offset, data_length).copy_(data_t)
         
         out = out.transpose(0,2).contiguous()
         if self.cuda:
@@ -162,7 +159,7 @@ class DataIterator(object):
         assert index <= self.numBatches, "%d > %d" % (index, self.numBatches)
         startId,endId = self.indexPair[index]
         srcBatch,offsets,max_length,Batch_t = self._batchify(
-            self.src[startId:endId], align_right=True)
+            self.src[startId:endId], align_right=True, src_freq = self.src_freq[startId:endId])
 
         if self.tgt:
             tgtBatch,offsetsY,max_lengthY,tgtBatch_t = self._batchify(
@@ -171,7 +168,6 @@ class DataIterator(object):
             
             reBatch = self._batchifyReIndex(
                 self.re_entrency_index[startId:endId],align_right=False)
-            
         else:
             tgtBatch = None
             idBatch = None

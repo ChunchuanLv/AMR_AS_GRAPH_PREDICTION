@@ -23,13 +23,17 @@ parser.add_argument('-train_from',
 
 ## Model optionsinitialize_lemma
 
-parser.add_argument('-rule_first', type=bool, default=False,
-                    help='Wheather seperate generator model for rule')
-parser.add_argument('-initialize_lemma', type=bool, default=False,
+parser.add_argument('-lemma_all', type=int, default=0,
+                    help='Wheather normalize over all lemmas')
+parser.add_argument('-alpha', type=float, default=0.1,
+                    help='unk with alpha/(freq + alpha) ')
+parser.add_argument('-rule_bias', type=int, default=0,
+                    help='Wheather have a bias for rule vs high')
+parser.add_argument('-initialize_lemma', type=int, default=1,
                     help='Wheather initialize_lemma')
 parser.add_argument('-enlayers', type=int, default=2,
                     help='Number of layers in the LSTM encoder/decoder')
-parser.add_argument('-delayers', type=int, default=1,
+parser.add_argument('-delayers', type=int, default=2,
                     help='Number of layers in the LSTM encoder/decoder')
 parser.add_argument('-srl', type=bool, default=False,
                     help='Wheather it is SRL stage')
@@ -37,7 +41,7 @@ parser.add_argument('-con_cat', type=bool, default=True,
                     help='Wheather conditional on cat to generate lemma')
 parser.add_argument('-generate', type=bool, default=False,
                     help='Wheather it is generate stage')
-parser.add_argument('-rnn_size', type=int, default=100,
+parser.add_argument('-rnn_size', type=int, default=200,
                     help='Size of LSTM hidden states')
 parser.add_argument('-word_dim', type=int, default=100,
                     help='Word embedding sizes')
@@ -63,11 +67,11 @@ parser.add_argument('-brnn_merge', default='concat',
                     help="""Merge action for the bidirectional hidden states:
                     [concat|sum]""")
 
-## Optimization options
+## Optimization options  
 
 parser.add_argument('-total_size', type=int, default=1024,
                     help='Maximum batch size')
-parser.add_argument('-flat', type=bool, default=False,
+parser.add_argument('-flat', type=int, default=0,
                     help='whether use flat prior')
 parser.add_argument('-max_generator_batches', type=int, default=16,
                     help="""Maximum batches of words in a sequence to run
@@ -80,9 +84,9 @@ parser.add_argument('-start_epoch', type=int, default=1,
 parser.add_argument('-param_init', type=float, default=0.1,
                     help="""Parameters are initialized over uniform distribution
                     with support (-param_init, param_init)""")
-parser.add_argument('-optim', default='adam',
+parser.add_argument('-optim', default='sgd',
                     help="Optimization method. [sgd|adagrad|adadelta|adam]")
-parser.add_argument('-learning_rate', type=float, default=.01,
+parser.add_argument('-learning_rate', type=float, default=1,
                     help="""Starting learning rate. If adagrad/adadelta/adam is
                     used, then this is the global learning rate. Recommended
                     settings: sgd = 1, adagrad = 0.1, adadelta = 1, adam = 0.1""")
@@ -122,7 +126,7 @@ parser.add_argument('-log_interval', type=int, default=50,
 
 opt = parser.parse_args()
 
-opt_str = "enlayers_"+str(opt.enlayers)+"_delayers_"+str(opt.delayers)+"_rnn_size_"+str(opt.rnn_size)+"_cat_dim_"+str(opt.cat_dim)+"_gpus_"+str(opt.gpus[0])+"_flat_"+str(opt.flat)+"_rule_first_"+str(opt.rule_first)+"_initialize_lemma_"+str(opt.initialize_lemma)
+opt_str = "enlayers_"+str(opt.enlayers)+"_delayers_"+str(opt.delayers)+"_rnn_size_"+str(opt.rnn_size)+"_cat_dim_"+str(opt.cat_dim)+"_gpus_"+str(opt.gpus[0])+"_rule_bias_"+str(opt.rule_bias)+"_initialize_lemma_"+str(opt.initialize_lemma)+"_lemma_all_"+str(opt.lemma_all)+"_optim_"+str(opt.optim)+"_alpha_"+str(opt.alpha)
 opt.cuda = len(opt.gpus)
 
 print(opt)
@@ -141,9 +145,9 @@ def NMTCriterion(vocabSize):
         crit.cuda()
     return crit
 
-def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regularizor):
+def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regularizor,lemma_all,eval):
     ''' high_prob:  tgt_len x batch x src_len x n_freq  ,
-        rule_prob:  tgt_len x batch x src_len,
+        rule_prob:  tgt_len x batch x src_len,  tgt_len x batch x src_len x src_len
         cat_prob:   tgt_len x  batch x src_len x n_cat
         high_index: tgt_len x batch_size        (0 ... n_high-1)
         rule_index: tgt_len x batch_size x src_len  (0 1)
@@ -162,10 +166,18 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regular
 
     high_index = high_index.view(-1)
     rule_index = rule_index.view(-1,src_len)
-
-    high_prob = out[:,:,:,0:n_freq].contiguous().view(-1,src_len,n_freq)
-    rule_prob = out[:,:,:,n_freq].contiguous().view(-1,src_len)
-    cat_likeli = out[:,:,:,n_freq+1:].contiguous().view(-1,src_len,n_cat)
+    if lemma_all and not eval:
+        high_prob = out[:,:,:,0:n_freq].contiguous().view(-1,src_len,n_freq)
+        rule_p_raw = out[:,:,:,n_freq:n_freq+src_len].contiguous().view(-1,src_len,src_len)
+        rule_prob = []
+        for i in range(total_size):
+            rule_prob.append(rule_p_raw[i].diag(0))
+        rule_prob = torch.stack(rule_prob).contiguous()
+        cat_likeli = out[:,:,:,n_freq+src_len:].contiguous().view(-1,src_len,n_cat)
+    else:
+        high_prob = out[:,:,:,0:n_freq].contiguous().view(-1,src_len,n_freq)
+        rule_prob = out[:,:,:,n_freq].contiguous().view(-1,src_len)
+        cat_likeli = out[:,:,:,n_freq+1:].contiguous().view(-1,src_len,n_cat)
 
   #  high_prob = Variable(high_prob.data, requires_grad= not eval , volatile= eval)
    # rule_prob = Variable(rule_prob.data, requires_grad=  not eval , volatile= eval)
@@ -173,10 +185,11 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regular
 
  #   print (rule_prob.size(),rule_index.size())
     effective_rule = rule_prob*rule_index.float() 
+        
     
     effective_high = high_prob.gather(2,high_index.view(total_size,1,1).expand(total_size,src_len,1)).squeeze(2)
     
-    effective_lemma = effective_rule+effective_high +1e-8
+    effective_lemma = effective_rule+effective_high 
 #    print("effective_lemma",effective_lemma.min(),effective_lemma.max(),effective_lemma.sum(2).squeeze(2))
   #  print ("cat_prob",cat_prob.size())
    # print ("cat_batch",cat_batch.size())
@@ -189,7 +202,7 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regular
   #  print ("n_cat,n_freq",n_cat,n_freq)
 
     num_words = lemma_batch.data.ne(PAD).sum()
-    loss = -(effective.sum(1).squeeze(1)[lemma_batch!=PAD]).log().sum()
+    loss = -(effective.sum(1).squeeze(1)[lemma_batch!=PAD]+1e-8).log().sum()
  #   print ("loss",loss)
    # print ("loss",-effective.sum(2).squeeze(2).log().sum()/tgt_len/batch,loss)
  #   print (effective.size())
@@ -198,7 +211,7 @@ def my_loss(out,high_index,rule_index,lemma_batch,cat_batch,n_freq,n_cat,regular
     loss += regularizor(posterior)
     return loss,num_words,posterior
 
-def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, reBatch,high_index,lemma_index,generator,dicts,eval):
+def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, reBatch,high_index,lemma_index,generator,dicts,opt,eval):
     ''' high_index: tgt_len x batch_size        (0 ... n_high-1)
         rule_index: tgt_len x batch_size x src_len  (0 1)
         cat_batch:  tgt_len x batch_size
@@ -227,7 +240,7 @@ def memoryEfficientLoss(outputs,attns,tgtBatch, srcBatch, reBatch,high_index,lem
 
         out = generator(attn_t,out_t,srcBatch[LEMMA])
   #      print ([i.size() for i in [out,out_t, tgt_t ,attn_t,high_index_t,lemma_index_t]])
-        loss_t,num_words_t,posterior = my_loss(out,high_index_t,lemma_index_t,lemma_t,cat_t,len(dicts["concept_ls"]),len(dicts["category_dict"]),poserior_regularizor)
+        loss_t,num_words_t,posterior = my_loss(out,high_index_t,lemma_index_t,lemma_t,cat_t,len(dicts["concept_ls"]),len(dicts["category_dict"]),poserior_regularizor,opt.lemma_all,eval)
 
         loss += loss_t.data[0]
         num_words += num_words_t
@@ -263,7 +276,7 @@ def eval(model, data,dicts):
    #     print ("out",out.size())
 
    #     print ("in eval tgtBatch",tgtBatch.size())
-        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,True)
+        loss,num_words,posterior  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,opt,True)
 
         total_loss += loss
         total_words += num_words
@@ -299,7 +312,7 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
             out,attns = model.forward(x)
      #       print ("trainModel",srcBatch.size())
             generator = model.generator
-            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,False)
+            loss,num_words,posterior,out_grad  = memoryEfficientLoss(out,attns,tgtBatch_t, srcBatch,reBatch, high_index_t,lemma_index_t,generator,dicts,opt,False)
        #     print ("in trainModel tgtBatch",tgtBatch.size())
          #   print ("out",out.size())
 
@@ -331,6 +344,8 @@ def trainModel(model, trainData, validData, dicts, optim,valid_loss_low =math.ex
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
 
+        valid_loss = eval(model, validData,dicts)
+        valid_ppl = math.exp(valid_loss)
         #  (1) train for one epoch on the training set
         train_loss = trainEpoch(epoch)
         print('Train perplexity: %g' % math.exp(train_loss))
@@ -431,9 +446,9 @@ def main():
             start_decay_at=opt.start_decay_at
         )
 
-        training_data = DataIterator(trainingFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
+        training_data = DataIterator(trainingFilesPath,opt,volatile = False,dicts=dicts)
 
-        dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+        dev_data = DataIterator(devFilesPath,opt,volatile = True,dicts=dicts)
 
         print("word_dict %d lemma_dict %d pos_dict %d ner_dict %d concept_dict %d "% (len(word_dict),len( lemma_dict),len( pos_dict),len( ner_dict ),len(concept_dict)))
         print(' * number of training sentences. %d' %
@@ -454,9 +469,9 @@ def main():
         optim = checkpoint['optim']
         opt.start_epoch = checkpoint['epoch'] + 1
 
-        training_data = DataIterator(trainingFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = False,dicts=dicts)
+        training_data = DataIterator(trainingFilesPath,opt,volatile = False,dicts=dicts,alpha = opt.alpha)
 
-        dev_data = DataIterator(devFilesPath,total_size = opt.total_size,cuda = opt.cuda,volatile = True,dicts=dicts)
+        dev_data = DataIterator(devFilesPath,opt,cuda = opt.cuda,volatile = True,dicts=dicts,alpha = opt.alpha)
 
         print("word_dict %d lemma_dict %d pos_dict %d ner_dict %d concept_dict %d "% (len(word_dict),len( lemma_dict),len( pos_dict),len( ner_dict ),len(concept_dict)))
         print(' * number of training sentences. %d' %
