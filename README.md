@@ -15,8 +15,8 @@ If you use our code, please cite our paper as follows:
 * Python 3.6 
 * Stanford Corenlp
 * pytorch 0.20
-* [GloVe] (https://nlp.stanford.edu/projects/glove/) embeddings  
-* [AMR dataset and resources files] (https://amr.isi.edu/download.html)
+* [GloVe](https://nlp.stanford.edu/projects/glove/) embeddings  
+* [AMR dataset and resources files](https://amr.isi.edu/download.html)
 
 ##Configuration:
 * Set up [Stanford Corenlp server](https://stanfordnlp.github.io/CoreNLP/corenlp-server.html), which feature extraction relies on.
