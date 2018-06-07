@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AMR AS GRAPH PREDICTION
 
 This repository contains code for training and using the Abstract Meaning Representation model described in:
@@ -63,3 +64,8 @@ So the results could be slightly different.
 ## Contact
 Contact (chunchuan.lv@gmail.com) if you have any questions!
 
+=======
+# AMR_AS_GRAPH_PREDICTION
+
+To BE COMPLETED. EXPECTED DATE: JULY 14
+>>>>>>> 984e6addac901a8391dfb596e4b59d832824b74f
