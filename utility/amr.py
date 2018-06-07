@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3.6
 # coding=utf-8
 '''
 Parser for Abstract Meaning Represention (AMR) annotations in Penman format.
@@ -14,21 +14,17 @@ TODO: Include the smatch evaluation code
 
 @author: Nathan Schneider (nschneid@inf.ed.ac.uk)
 @since: 2015-05-05
+
+
+@author:Chunchuan Lyu (chunchuan.lv@gmail.com)
+@since: 2018-05-28
 '''
 
-import os
-import sys
-import re
-import fileinput
-import json
-from pprint import pprint
-from collections import defaultdict, namedtuple, Container
-try:
-    from counter import Counter
-except:
-    from collections import Counter
+from collections import defaultdict
+from collections import Counter
 from parsimonious.grammar import Grammar
 from nltk.parse import DependencyGraph
+from utility.constants import *
 
 PUSH = "<STACK_PUSH>"
 POP = "<STACK_POP>"
@@ -61,21 +57,138 @@ class AmrObject(object):
     
     def is_constant(self):
         return False
-    
-    
+
+    def deepcopy(self,s=""):
+        return AmrObject(self._name+s)
+
+
+
+
+NULL_WORD = ""
+
+#Data structure representing AMR nodes
+class AMRUniversal(object):
+
+
+    def __init__(self, *args, **kwargs):
+        if "string" in kwargs:
+            self.construct_by_string(kwargs["string"])
+        elif "concept" in kwargs:
+            self.construct_by_concept(kwargs["concept"])
+        else:
+            aux = args[3] if len(args)>3 else NULL_WORD
+            self.construct_by_content(args[0],args[1],args[2],aux)
+
+    def construct_by_string(self, txt):
+        txts = txt[:-1].split("(")
+        assert len(txts)>1,txt
+        assert len(txts[1])>0 and len(txts[0])>0,txt
+        while  txts[1][-1] == ")" :
+            txts[1] = txts[1][:-1]
+        cats = txts[0].split("_")
+
+        self.cat = cats[0]
+        self.aux = cats[1] if len(cats)>1 else NULL_WORD
+        self.le = re.sub(RE_FRAME_NUM,"", txts[1])
+        self.sense = re.search(RE_FRAME_NUM,  txts[1]).group() \
+            if re.search(RE_FRAME_NUM,  txts[1]) else NULL_WORD
+
+    def is_concept(self):
+
+        return self.cat == Rule_Concept
+
+    def is_var(self):
+        return False
+
+    def is_constant(self):
+        return self.cat in Rule_All_Constants
+
+    def is_frame(self):
+        return self.cat == Rule_Frame
+
+    def construct_by_content(self, le,cat,sense,aux):
+        assert isinstance(le, str) and isinstance(cat, str),(le,cat,sense,aux)
+        self.le = le
+        self.cat = cat
+        self.sense = sense if sense is not None else NULL_WORD
+        self.aux = aux if aux is not None else NULL_WORD
+
+    def construct_by_concept(self, concept):
+        le,cat,sense = decompose(concept)
+        self.le = le
+        self.cat = cat
+        self.sense = sense if sense is not None else NULL_WORD
+        self.aux = NULL_WORD
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        sense = self.sense if self.sense != NULL_WORD else ""
+        return self.cat+"("+self.le+sense+")" if self.aux is  NULL_WORD \
+            else self.cat+"_"+self.aux+"("+self.le+sense+")"
+
+    def gold_str(self):
+        sense = self.sense if self.sense != NULL_WORD else ""
+        if self.cat == Rule_String: return "\""+self.le+"\""
+        return self.le+sense
+
+    def __hash__(self):
+        return hash(self.__repr__())
+
+
+    def non_sense_equal(self,other):
+        return isinstance(other,AMRUniversal) and self.le == other.le and self.cat ==other.cat
+    def __eq__(self, other):
+        return self.le == other.le and self.cat ==other.cat \
+               and self.sense ==other.sense and self.aux ==other.aux
+
+#decompose amr node to le_cat_sense
+def decompose(c):
+
+    if c is None: return None,None,None
+    if isinstance(c,AMRUniversal):
+        return c.le,c.cat,c.sense
+
+    if c.is_var():
+        return c._value,Rule_Re,None
+    if c.is_constant():
+        if c.is_str():
+            return c._value,Rule_String,None
+        if c.is_num():
+            return c._value,Rule_Num,None
+        return c._value,Rule_Constant,None
+
+    x = c.__str__().split(Splish)
+    if len(x)>1 :
+        sense = re.search(RE_FRAME_NUM, x[0]).group()
+        return re.sub(RE_FRAME_NUM,"",x[0]),x[1],sense
+
+    if c.is_frame():
+        return re.sub(RE_FRAME_NUM,"",c._name),Rule_Frame,c._name[-3:]
+    return c.__str__(),Rule_Concept,None
+
 class Var(object):
 
-    def __init__(self, name):
+    def __init__(self, name,align = ""):
         self._name = name
-        
+        self._align = align
+    
+    def __le__(self,other):
+        return self._name < other._name
+    def set_align(self,align):
+        self._align = align
+    def __align__(self):
+        return self._align[1:]
     def is_var(self):
         return True
-    
+    def is_concept(self):
+        return False
     def is_constant(self):
         return False
 
     def __repr__(self):
-        return 'Var(' + self._name + ')'
+        return 'Var(' + self._name + self._align+')'
 
     def __str__(self):
         return self._name
@@ -89,25 +202,32 @@ class Var(object):
         return isinstance(that, type(self)) and self._name == that._name
 
     def __hash__(self):
-        return hash(repr(self))
+        return hash(self._name)
+
+    def deepcopy(self,s=""):
+        return Var(self._name+s,self._align)
 
 
 class Concept(object):
     RE_FRAME_NUM = re.compile(r'-\d\d$')
-
-    def __init__(self, name):
+    COMP = re.compile(r'_\d')
+    def __init__(self, name,align = None):
         self._name = name
+    
+    def is_concept(self):
 
+        return True
     def is_var(self):
         return False
     def is_constant(self):
         return False
-
     def is_frame(self):
         return self.RE_FRAME_NUM.search(self._name) is not None
+    def is_compo(self):
+        return  self.COMP.search(self._name) is not None
 
     def __repr__(self):
-        return 'Concept(' + self._name + ')'
+        return 'Concept(' +self._name.replace(Splish,"_") + ')'
 
     def __str__(self, align={}):
         return self._name + align.get(self, '')
@@ -120,34 +240,9 @@ class Concept(object):
 
     def __hash__(self):
         return hash(repr(self))
+    def deepcopy(self,s=""):
+        return Concept(self._name+s)
     
-    
-class Comp_Concept(Concept):  #including NER
-    RE_FRAME_NUM = re.compile(r'-\d\d$')
-
-    def __init__(self, name):
-        self._name = name
-
-    def is_constant(self):
-        return False
-
-    def is_frame(self):
-        return self.RE_FRAME_NUM.search(self._name) is not None
-
-    def __repr__(self):
-        return 'Concept(' + self._name + ')'
-
-    def __str__(self, align={}):
-        return self._name + align.get(self, '')
-
-    def __call__(self, **kwargs):
-        return self.__str__(**kwargs)
-
-    def __eq__(self, that):
-        return isinstance(that, type(self)) and self._name == that._name
-
-    def __hash__(self):
-        return hash(repr(self))
 
 
 class AMRConstant(object):
@@ -155,6 +250,8 @@ class AMRConstant(object):
     def __init__(self, value):
         self._value = value
 
+    def is_concept(self):
+        return False
     def is_var(self):
         return False
     def is_constant(self):
@@ -183,6 +280,8 @@ class AMRConstant(object):
 
     def __hash__(self):
         return hash(repr(self))
+    def deepcopy(self,s=""):
+        return AMRConstant(self._value+s)
 
 
 class AMRString(AMRConstant):
@@ -195,6 +294,8 @@ class AMRString(AMRConstant):
     def is_str(self):
         return True
 
+    def deepcopy(self,s=""):
+        return AMRString(self._value+s)
 
 class AMRNumber(AMRConstant):
 
@@ -203,7 +304,9 @@ class AMRNumber(AMRConstant):
     
     
     def is_num(self):
-        return  self._value != "-" 
+        return  self._value != "-"
+    def deepcopy(self,s=""):
+        return AMRNumber(self._value+s)
 
 
 class AMRError(Exception):
@@ -213,6 +316,10 @@ class AMRError(Exception):
 class AMRSyntaxError(Exception):
     pass
 
+#used to check whether its' the cannonical form of relation
+#only core relation and the inverse of non-core relation is in cannonical form
+def is_core(r):
+    return r.startswith(':ARG') or  r.startswith(':op') or  r.startswith(':snt') or r.startswith(':top')
 
 class AMR(DependencyGraph):
     '''
@@ -417,7 +524,6 @@ class AMR(DependencyGraph):
         self._constants = set()
         self._alignments = {}
         self._tokens = tokens
-
         self.nodes = defaultdict(lambda: {'address': None,
                                           'type': None,
                                           'head': None,
@@ -443,8 +549,117 @@ class AMR(DependencyGraph):
                     'Well-formedness error in annotation:\n' + anno.strip())
             self._analyze(p)
 
-        # for i in self._triples:
-        #     print(i)
+
+
+    def _analyze(self, p):
+
+        '''Analyze the AST produced by parsimonious.'''
+        v2c = {}    # variable -> concept
+        elts = {}  # for interning variables, concepts, constants, etc.
+        consts = set()  # all constants used in the A
+        index = {}  #var to index
+        align_var = []
+
+        def intern_elt(x,prefix):
+            index[prefix] =  x
+            if isinstance(x,Var):
+                return elts.setdefault(x,x)
+
+            return elts.setdefault(prefix,prefix)
+        def walk(n,prefix = "0."):    # (v / concept...)
+            triples = []
+            deps = []
+            v = None
+            i = 0
+            for ch in n.children:
+                t = ch.expr_name
+                if t == 'VAR':
+                    var_node, alignment_node = ch.children
+                    x = Var(var_node.text,alignment_node.text)
+                    v = intern_elt(x,".".join(prefix.split(".")[:-1]))
+          #          print ("saw var",v,prefix)
+                elif t == 'CONCEPT' :
+
+                    assert v is not None
+                    concept_node, alignment_node = ch.children
+                    if  v in v2c:
+                        raise AMRError(
+                            'Variable has multiple concepts: ' +
+                            str(v2c)+
+                            '\n' +
+                            concept_node.text +
+                            '\n' +
+                            str(v) +
+                            '\n' +
+                            str(v2c[v])  +
+                            '\n' +
+                            self._anno)
+                    v2c[v] = Concept(concept_node.text)
+                elif t == '' and ch.children:
+                    old_i = i
+                    for ch2 in ch.children:
+                        _part, RELpart, _part, Ypart = ch2.children
+                        rel, relalignment = RELpart.children
+                        rel = rel.text
+                        assert rel is not None
+                        assert len(Ypart.children) == 1
+                        q = Ypart.children[0]
+                        tq = q.expr_name
+                        n2 = None
+                        triples2 = []
+                        deps2 = []
+                        if tq == 'X':
+                            n2, triples2, deps2 = walk(q,prefix+str(i)+".")
+                            i += 1
+                        else:
+                            if tq == 'NAMEDCONST':
+                                qleft, qalign = q.children
+                                n2 = intern_elt(AMRConstant(qleft.text),prefix+str(i))
+                                consts.add(n2)
+                                i += 1
+                            elif tq == 'VAR':
+                                qleft, qalign = q, None
+                                   
+                                var_node, alignment_node = qleft.children
+                                n2 = intern_elt(Var(var_node.text,alignment_node.text),prefix+str(i))
+                            elif tq == 'STR':
+                                quote1, qstr, quote2, qalign = q.children
+                                n2 = intern_elt(AMRString(qstr.text),prefix+str(i))
+                                consts.add(n2)
+                                i += 1
+                            elif tq == 'NUM':
+                                qleft, qalign = q.children
+                                n2 = intern_elt(AMRNumber(qleft.text),prefix+str(i))
+                                consts.add(n2)
+                                i += 1
+                            if qalign and len(qalign.text) > 0:
+                                self._alignments[n2] = qalign.text[1:]
+                        assert n2 is not None
+                        self.add_node({'address': n2, 'word': n2, 'type': tq,
+                                       'rel': rel, 'head': v})
+                        self.nodes[n2]['deps'].extend(deps2)
+                        deps.append(n2)
+                        triples.append((v, rel, n2))
+                        triples.extend(triples2)
+                    i = old_i
+
+            return v, triples, deps
+
+        assert p.expr_name == 'ALL'
+        n = None
+        for ch in p.children:
+            if ch.expr_name == 'X':
+                assert n is None    # only one top-level node per AMR
+                n, triples, deps = walk(ch)
+                self.nodes[n]['deps'].extend(deps)
+                triples = [(Var('TOP'), ':top', n)] + triples
+
+
+        # All is well, so store the resulting data
+        self._v2c = v2c
+        self._triples = triples
+        self._constants = consts
+        self._index = index
 
     # overrides superclass implementation
     def triples(
@@ -509,6 +724,8 @@ class AMR(DependencyGraph):
                         dep,)))
         return list(tt)
 
+    def is_core(self,r):
+            return is_core(r)
     def role_triples(self, **kwargs):
         '''
         Same as triples(), but limited to roles (excludes :instance-of, :instance, and :top relations).
@@ -561,156 +778,14 @@ class AMR(DependencyGraph):
     def __call__(self, **kwargs):
         return self.__str__(**kwargs)
 
-    # def __str__(self, alignments=True, compressed=False, indent=' '*4):
-    #     '''Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).'''
-    #     s = ''
-    #     stack = []
-    #     instance_fulfilled = None
-    #     #align = {k: '~'+v for k,v in self._alignments.items()} if alignments else {}
-    #     align = {}
-    #     if alignments:
-    #          for k,v in self._alignments.items():
-    #             align[k] = '~'+v
-    #     for h, r, d in self.triples()+[(None,None,None)]:
-    #         if r==':top':
-    #             s += '(' + str(d)
-    #             stack.append(d)
-    #             instance_fulfilled = False
-    #         elif r==':instance-of':
-    #             s += ' / ' + d(align=align)
-    #             instance_fulfilled  = True
-    #         elif h==stack[-1] and r==':polarity':   # polarity gets to be on the same line as the concept
-    #             s += ' ' + r
-    #             if alignments and (h,r,d) in self._alignments:
-    #                 s += '~' + self._alignments[(h,r,d)]
-    #             s += ' ' + d(align=align)
-    #         else:
-    #             while stack and h!=stack[-1]:
-    #                 popped = stack.pop()
-    #                 if instance_fulfilled is False:
-    #                     # just a variable or constant with no concept hanging off of it
-    #                     # so we have an extra paren to get rid of
-    #                     s = s[:-len(popped(align=align))-1] + popped(align=align)
-    #                 else:
-    #                     s += ')'
-    #                 instance_fulfilled = None
-    #             if d is not None:
-    #                 s += '\n' + indent*len(stack) + r
-    #                 if alignments and (h,r,d) in self._alignments:
-    #                     s += '~' + self._alignments[(h,r,d)]
-    #                 s += ' (' + d(align=align)
-    #                 stack.append(d)
-    #                 instance_fulfilled = False
-    #     return s
     def __str__(
             self,
             alignments=True,
             tokens=True,
             compressed=False,
             indent=' ' * 4):
-        '''
-        Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).
+        return self._anno
 
-        >>> a = AMR('(p / person :ARG0-of (h / hug-01 :ARG0 p :ARG1 p) :mod (s / strange))')
-        >>> # people who hug themselves and are strange
-        >>> print(str(a))
-        (p / person
-            :ARG0-of (h / hug-01
-                :ARG0 p
-                :ARG1 p)
-            :mod (s / strange))
-        '''
-        s = ''
-        stack = []
-        instance_fulfilled = None
-        #align = {k: '~'+v for k,v in self._alignments.items()} if alignments else {}
-        align = {}
-        if alignments:
-            for k, v in list(self._alignments.items()):
-                align[k] = '~' + v
-        if tokens is True:
-            tokens = self.tokens()
-        if align and tokens:
-            for k, align_key in list(align.items()):
-                align[k] = align_key + \
-                    '[' + tokens[int(align_key.split('.')[1])] + ']'
-        # size of the stack when the :instance-of triple was encountered for
-        # the variable
-        concept_stack_depth = {None: 0}
-        prefix = ""
-        counts = []
-        self.v2prefix = {}
-        for h, r, d in self.triples() + [(None, None, None)]:
-            if r == ':top':
-                s += '(' + str(d)
-                prefix = "0"
-                counts = [0]
-                #print ("1", s)
-                stack.append(d)
-                instance_fulfilled = False
-            elif r == ':instance-of':
-                self.v2prefix[s.split()[-1][1:]] = prefix
-                s += ' / ' + d(align=align)
-                instance_fulfilled = True
-                concept_stack_depth[h] = len(stack)
-                #print ("2", s)
-            # polarity gets to be on the same line as the concept
-            elif h == stack[-1] and r == ':polarity':
-                s += ' ' + r
-                if alignments and (h, r, d) in self._alignments:
-                    align_key = self._alignments[(h, r, d)]
-                    s += '~' + align_key
-                    if tokens:  # assumption: one token per alignment key
-                        woffset = int(align_key.split('.')[1])
-                        s += '[' + tokens[woffset] + ']'
-
-                s += ' ' + d(align=align)
-                ###self.v2prefix[d(align=align)] = prefix + "." + str(counts[-1])
-
-                counts[-1] += 1
-
-                ###instance_fulfilled = True
-                ###print ("3", s)
-            else:
-                while len(stack) > concept_stack_depth[h]:
-                    popped = stack.pop()
-                    if instance_fulfilled is False:
-                        # just a variable or constant with no concept hanging off of it
-                        # so we have an extra paren to get rid of
-                        s = s[:-len(popped(align=align)) - 1] + \
-                            popped(align=align)
-                        # if popped(align=align) in [str(k) for k in
-                        # self._v2c.keys()]:
-                        prefix = ".".join(prefix.split(".")[0:-1])
-                        counts.pop(-1)
-                        if len(counts) > 0:
-                            counts[-1] -= 1
-                        # else:
-                        #	self.v2prefix[popped(align=align)] = prefix
-                        #print ("4",s)
-                    else:
-                        s += ')'
-                        prefix = ".".join(prefix.split(".")[0:-1])
-                        counts.pop(-1)
-                        #print ("5", s)
-                    instance_fulfilled = None
-                if d is not None:
-
-                    s += '\n' + indent * len(stack) + r
-                    if alignments and (h, r, d) in self._alignments:
-                        align_key = self._alignments[(h, r, d)]
-                        s += '~' + align_key
-                        if tokens:  # assumption: one token per alignment key
-                            woffset = int(align_key.split('.')[1])
-                            s += '[' + tokens[woffset] + ']'
-                    s += ' (' + d(align=align)
-                    prefix += "." + str(counts[-1])
-                    counts[-1] += 1
-                    counts.append(0)
-                    stack.append(d)
-                    instance_fulfilled = False
-                    #print ("6",s)
-        return s
     def dfs(self):
         '''
         Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).
@@ -731,7 +806,7 @@ class AMR(DependencyGraph):
             if r == ':instance-of':
                 continue
             if d.is_var():
-                s.append((r,self._v2c[d],h,d))
+                s.append((r,self._v2c[d],h,d))   #relation, concept, original head, dependent
             elif d.is_constant() :
                 s.append((r,d,h,d))
         out = []
@@ -740,181 +815,10 @@ class AMR(DependencyGraph):
         return out
 
 
-    def dfs_index_re(self):
-        '''
-        Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).
 
-        >>> a = AMR('(p / person :ARG0-of (h / hug-01 :ARG0 p :ARG1 p) :mod (s / strange))')
-        >>> # people who hug themselves and are strange
-        >>> print(str(a))
-        (p / person
-            :ARG0-of (h / hug-01
-                :ARG0 p
-                :ARG1 p)
-            :mod (s / strange))
-        '''
-        variables = dict()
-        checkleaf = False
-        s = []
-        i = 0
-        for h, r, d in self.triples():
-            if r == ':instance-of':
-                continue
-            if d.is_var():
-                if not d in variables:
-                    variables[d] = i
-                    s.append((r,self._v2c[d],h,i))
-                else:
-                    s.append((r,self._v2c[d],h,variables[d]))
-                    
-            elif d.is_constant() :
-                s.append((r,d,h,i))
-            i = i +1
-        out = []
-        for i,r_c_h_v in enumerate(s):
-            out.append((r_c_h_v[0],r_c_h_v[1],r_c_h_v[3]))
-        return out
-
-
-    def dfs_single(self):
-        '''
-        Assumes triples are stored in a sensible order (reflecting how they are encountered in a valid AMR).
-
-        >>> a = AMR('(p / person :ARG0-of (h / hug-01 :ARG0 p :ARG1 p) :mod (s / strange))')
-        >>> # people who hug themselves and are strange
-        >>> print(str(a))
-        (p / person
-            :ARG0-of (h / hug-01
-                :ARG0 p
-                :ARG1 p)
-            :mod (s / strange))
-        '''
-        variables = []
-        checkleaf = False
-        s = []
-        for h, r, d in self.triples():
-            if r == ':instance-of':
-                continue
-            if d.is_var():
-                if not d in variables:
-                    s.append((r,self._v2c[d],h,d))
-                    variables.append(d)
-            elif d.is_constant() :
-                s.append((r,d,h,d))
-        out = []
-        for i in range(len(s)):
-            out.append((s[i][0],s[i][1]))
-        return out
 
     def __repr__(self):
         return self.__str__()
-
-    def _analyze(self, p):
-        '''Analyze the AST produced by parsimonious.'''
-        v2c = {}    # variable -> concept
-        allvars = set()  # all vars mentioned in the AMR
-        elts = {}  # for interning variables, concepts, constants, etc.
-        consts = set()  # all constants used in the AMR
-
-        def intern_elt(x):
-            return elts.setdefault(x, x)
-
-        def walk(n):    # (v / concept...)
-            triples = []
-            deps = []
-            v = None
-            for ch in n.children:
-                t = ch.expr_name
-                if t == 'VAR':
-                    v = intern_elt(Var(ch.text))
-                    allvars.add(v)
-                elif t == 'CONCEPT':
-                    assert v is not None
-                    if v in v2c:
-                        raise AMRError(
-                            'Variable has multiple concepts: ' +
-                            str(v) +
-                            '\n' +
-                            self._anno)
-                    concept_node, alignment_node = ch.children
-                    c = intern_elt(Concept(concept_node.text))
-                    v2c[v] = c
-                    self.add_node({'address': c,
-                                   'word': c,
-                                   'type': 'CONCEPT',
-                                   'rel': ':instance-of',
-                                   'head': v,
-                                   'deps': []})
-                    deps.append(c)
-                    triples.append((v, ':instance-of', c))
-                    if len(alignment_node.text) > 0:
-                        self._alignments[c] = alignment_node.text[1:]
-                elif t == '' and ch.children:
-                    for ch2 in ch.children:
-                        _part, RELpart, _part, Ypart = ch2.children
-                        rel, relalignment = RELpart.children
-                        rel = rel.text
-                        assert rel is not None
-                        assert len(Ypart.children) == 1
-                        q = Ypart.children[0]
-                        tq = q.expr_name
-                        n2 = None
-                        triples2 = []
-                        deps2 = []
-                        if tq == 'X':
-                            n2, triples2, deps2 = walk(q)
-                        else:
-                            if tq == 'NAMEDCONST':
-                                qleft, qalign = q.children
-                                n2 = intern_elt(AMRConstant(qleft.text))
-                                consts.add(n2)
-                            elif tq == 'VAR':
-                                qleft, qalign = q, None
-                                n2 = intern_elt(Var(qleft.text))
-                                allvars.add(n2)
-                            elif tq == 'STR':
-                                quote1, qstr, quote2, qalign = q.children
-                                n2 = intern_elt(AMRString(qstr.text))
-                                consts.add(n2)
-                            elif tq == 'NUM':
-                                qleft, qalign = q.children
-                                n2 = intern_elt(AMRNumber(qleft.text))
-                                consts.add(n2)
-                            if qalign and len(qalign.text) > 0:
-                                self._alignments[n2] = qalign.text[1:]
-                        assert n2 is not None
-                        self.add_node({'address': n2, 'word': n2, 'type': tq,
-                                       'rel': rel, 'head': v})
-                        self.nodes[n2]['deps'].extend(deps2)
-                        deps.append(n2)
-                        triples.append((v, rel, n2))
-                        if len(relalignment.text) > 0:
-                            self._alignments[
-                                (v, rel, n2)] = relalignment.text[
-                                1:]
-                        triples.extend(triples2)
-            return v, triples, deps
-
-        assert p.expr_name == 'ALL'
-
-        n = None
-        for ch in p.children:
-            if ch.expr_name == 'X':
-                assert n is None    # only one top-level node per AMR
-                n, triples, deps = walk(ch)
-                self.add_node({'address': n, 'word': n, 'type': 'VAR',
-                               'rel': ':top', 'head': intern_elt(Var('TOP'))})
-                self.nodes[n]['deps'].extend(deps)
-                triples = [(intern_elt(Var('TOP')), ':top', n)] + triples
-
-        if allvars - set(v2c.keys()):
-            raise AMRError('Unbound variable(s): ' + ','.join(map(str,
-                                                                  allvars - set(v2c.keys()))) + '\n' + self._anno)
-
-        # All is well, so store the resulting data
-        self._v2c = v2c
-        self._triples = triples
-        self._constants = consts
 
 
 good_tests = [

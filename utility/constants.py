@@ -1,83 +1,71 @@
+'''Global constants, and file paths'''
 import os,re
 
-WORD_EMBEDDING = "WORD_EMBEDDING"
-LEMMA_EMBEDDING = "LEMMA_EMBEDDING"
-CONCEPT_EMBEDDING = "CONCEPT_EMBEDDING"
-WORD_TO_ID = "WORD_TO_ID"
-LEMMA_TO_ID= "LEMMA_TO_ID"
-CONCEPT_TO_ID = "CONCEPT_TO_ID"
-SHORT_LIST_ID = "SHORT_LIST_ID"
+# Change the path according to your system
 
-ID_TO_WORD = "ID_TO_WORD"
-ID_TO_LEMMA ="ID_TO_LEMMA"
-ID_TO_CONCEPT = "ID_TO_CONCEPT"
+save_to = 'model/'    #the folder amr model will be saved to  (model name is parameterized by some hyper parameter)
+train_from = 'model/gpus_0valid_best.pt'  #default model loading
+embed_path = "/disk/scratch/s1544871/glove.840B.300d.txt"    #file containing glove embedding
+core_nlp_url = 'http://localhost:9000'     #local host url of standford corenlp server
+allFolderPath = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/amrs/split"
+resource_folder_path  = os.path.expanduser('~')+"/Data/amr_annotation_r2/"
+frame_folder_path = resource_folder_path+"data/frames/propbank-frames-xml-2016-03-08/"
+have_org_role = resource_folder_path+"have-org-role-91-roles-v1.06.txt"   #not used
+have_rel_role = resource_folder_path+"have-rel-role-91-roles-v1.06.txt"   #not used
+morph_verbalization = resource_folder_path+"morph-verbalization-v1.01.txt"  #not used
+verbalization =  resource_folder_path+"verbalization-list-v1.06.txt"
 
-Rule_Frame = "Rule_Frame"
-Rule_Constant = "Rule_Constant"
-Rule_String = "Rule_String"
-Rule_Concept = "Rule_Concept"
-Rule_Num = "Rule_Num"
+
+PAD = 0
+UNK = 1
+
+PAD_WORD = '<pad>'
+UNK_WORD = '<unk>'
+BOS_WORD = '<s>'
+EOS_WORD = '</s>'
+NULL_WORD = ""
+UNK_WIKI = '<WIKI>'
+Special = [NULL_WORD,UNK_WORD,PAD_WORD]
+#Categories
+Rule_Frame = "Frame"
+Rule_Constant = "Constant"
+Rule_String = "String"
+Rule_Concept = "Concept"
+Rule_Comp = "COMPO"
+Rule_Num = "Num"
+Rule_Re = "Re"    #corenference
+Rule_Ner = "Ner"
+Rule_B_Ner = "B_Ner"
+Rule_Other = "Entity"
+Other_Cats = {"person","thing",}
+COMP = "0"
+Rule_All_Constants = [Rule_Num,Rule_Constant,Rule_String,Rule_Ner]
+Splish = "$£%%££%£%£%£%"
+Rule_Basics = Rule_All_Constants + [Rule_Frame,Rule_Concept,UNK_WORD,BOS_WORD,EOS_WORD,NULL_WORD,PAD_WORD]
 
 RULE = 0
 HIGH = 1
 LOW = 2
 
 RE_FRAME_NUM = re.compile(r'-\d\d$')
+RE_COMP = re.compile(r'_\d$')
+end= re.compile(".txt\_[a-z]*")
+epsilon = 1e-8
 
-PAD = 0
-UNK = 1
-BOS = 2
-EOS = 3
-
-PAD_WORD = '<blank>'
-UNK_WORD = '<unk>'
-BOS_WORD = '<s>'
-EOS_WORD = '</s>'
+TXT_WORD = 0
+TXT_LEMMA = 1
+TXT_POS = 2
+TXT_NER = 3
 
 
-WORD = 0
-LEMMA = 1
-POS = 2
-NER = 3
-
+AMR_CAT = 0
+AMR_LE = 1
+AMR_NER = 2
+AMR_AUX = 2
+AMR_LE_SENSE = 3
+AMR_SENSE = 3
+AMR_CAN_COPY = 4
 
 threshold = 5
 
 
-# Change the path according to your system
-path_to_stanford = os.path.expanduser('~')+"/Dependency"
-stanford_classifier = path_to_stanford+'/stanford-ner-2016-10-31/classifiers/english.muc.7class.distsim.crf.ser.gz'
-stanford_ner_path = path_to_stanford+'/stanford-ner-2016-10-31/stanford-ner.jar'
-stanford_postagger = path_to_stanford+'/stanford-postagger-full-2016-10-31/stanford-postagger.jar'
-stanford_postagger_model = path_to_stanford+'/stanford-postagger-full-2016-10-31/models/english-bidirectional-distsim.tagger'
-
-embed_path = os.path.expanduser('~') + "/Data/sskip.100.vectors"
-
-def folder_to_files_path(folder,ends =".txt"):
-    files = os.listdir(folder )
-    files_path = []
-    for f in files:
-        if f.endswith(ends):
-            files_path.append(folder+f)
-    return files_path
-
-trainFolderPath = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/amrs/split/training/"
-trainingFilesPath = folder_to_files_path(trainFolderPath)
-
-
-devFolderPath = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/amrs/split/dev/"
-devFilesPath = folder_to_files_path(devFolderPath)
-
-testFolderPath = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/amrs/split/test/"
-testFilesPath = folder_to_files_path(testFolderPath)
-
-
-frame_folder_path = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/frames/propbank-frames-xml-2016-03-08/"
-frame_files_path =  folder_to_files_path(frame_folder_path,".xml")
-
-resource_folder_path  = os.path.expanduser('~')+"/Data/amr_annotation_r2/"
-
-have_org_role = resource_folder_path+"have-org-role-91-roles-v1.06.txt"
-have_rel_role = resource_folder_path+"have-rel-role-91-roles-v1.06.txt"
-morph_verbalization = resource_folder_path+"morph-verbalization-v1.01.txt"
-verbalization =  resource_folder_path+"verbalization-list-v1.06.txt"

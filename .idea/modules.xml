@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/AMR_AS_SRL.iml" filepath="$PROJECT_DIR$/.idea/AMR_AS_SRL.iml" />
+      <module fileurl="file://$USER_HOME$/AMR_AS_GRAPH/.idea/AMR_AS_GRAPH.iml" filepath="$USER_HOME$/AMR_AS_GRAPH/.idea/AMR_AS_GRAPH.iml" />
     </modules>
   </component>
 </project>
