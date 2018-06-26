@@ -332,6 +332,7 @@ if not opt.skip:
 
 
     category_dict = initial_dict("data/category_dict",with_unk=True)
+    sensed_dict  = initial_dict("data/sensed_dict ",with_unk=True)
 
 
     #print ("high freq")
@@ -374,6 +375,7 @@ if not opt.skip:
     high_dict.save()
     category_dict.save()
     rel_dict.save()
+    sensed_dict.save()
 else:
 
     word_dict = Dict("data/word_dict")
@@ -384,13 +386,14 @@ else:
     ner_dict = Dict("data/ner_dict")
     rel_dict = Dict("data/rel_dict")
     category_dict = Dict("data/category_dict")
-
+    sensed_dict = Dict("data/sensed_dict")
     word_dict.load()
     lemma_dict.load()
     pos_dict.load()
     ner_dict.load()
     rel_dict.load()
     category_dict.load()
+    sensed_dict.load()
     high_dict.load()
     aux_dict.load()
 
