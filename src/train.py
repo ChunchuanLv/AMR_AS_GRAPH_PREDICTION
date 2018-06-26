@@ -527,28 +527,25 @@ def embedding_from_dicts( opt,dicts):
         lemma_dict = dicts["lemma_dict"]
         word_initialized = 0
         lemma_initialized = 0
+        word_embedding = nn.Embedding(dicts["word_dict"].size(),
+                                      300,   #size of glove dimension
+                              padding_idx=PAD)
+        lemma_lut = nn.Embedding(dicts["lemma_dict"].size(),
+                                  opt.lemma_dim,
+                                  padding_idx=PAD)
         with open(embed_path, 'r') as f:
             for line in f:
                 parts = line.rstrip().split()
-                if len(parts)==2:
-                    word_embedding = nn.Embedding(dicts["word_dict"].size(),
-                                                  int(parts[1]),
-                                          padding_idx=PAD)
-                    lemma_lut = nn.Embedding(dicts["lemma_dict"].size(),
-                                              opt.lemma_dim,
-                                              padding_idx=PAD)
-                    print (parts)
-                else:
-                    id,id2 = word_dict[parts[0]],lemma_dict[parts[0]]
-                    if id != UNK and id < word_embedding.num_embeddings:
-                        tensor = torch.FloatTensor([float(s) for s in parts[-word_embedding.embedding_dim:]]).type_as(word_embedding.weight.data)
-                        word_embedding.weight.data[id].copy_(tensor)
-                        word_initialized += 1
+                id,id2 = word_dict[parts[0]],lemma_dict[parts[0]]
+                if id != UNK and id < word_embedding.num_embeddings:
+                    tensor = torch.FloatTensor([float(s) for s in parts[-word_embedding.embedding_dim:]]).type_as(word_embedding.weight.data)
+                    word_embedding.weight.data[id].copy_(tensor)
+                    word_initialized += 1
 
-                    if False and id2 != UNK and id2 < lemma_lut.num_embeddings :
-                        tensor = torch.FloatTensor([float(s) for s in parts[-lemma_lut.embedding_dim:]]).type_as(lemma_lut.weight.data)
-                        lemma_lut.weight.data[id2].copy_(tensor)
-                        lemma_initialized += 1
+                if False and id2 != UNK and id2 < lemma_lut.num_embeddings :
+                    tensor = torch.FloatTensor([float(s) for s in parts[-lemma_lut.embedding_dim:]]).type_as(lemma_lut.weight.data)
+                    lemma_lut.weight.data[id2].copy_(tensor)
+                    lemma_initialized += 1
 
         print ("word_initialized", word_initialized)
         print ("lemma initialized", lemma_initialized)
