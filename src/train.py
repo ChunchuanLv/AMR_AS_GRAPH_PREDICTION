@@ -33,7 +33,7 @@ def train_parser():
                         help="""wheather to use fixed alignment""")
     parser.add_argument('-save_to', default=save_to,
                         help="""folder to save""" )
-    parser.add_argument('-train_from', default = train_from,
+    parser.add_argument('-train_from', default = None,
                         help="""If training from a checkpoint then this is the
                         path to the pretrained model.""")
     parser.add_argument('-get_wiki', type=bool,default=True)
