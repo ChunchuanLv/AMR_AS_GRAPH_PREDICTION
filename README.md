@@ -35,7 +35,7 @@ Build data into tensor.
 `python src/data_build.py `
 
 ##Training:
-Default model is saved in model/gpus_0valid_best.pt .
+Default model is saved in [save_to]/gpus_0valid_best.pt . (save_to is defined in constants.py)
 `python src/train.py `
 
 ##Testing
@@ -59,8 +59,8 @@ Keeping the files under data/ folder unchanged, download [model](https://drive.g
 Should allow one to run parsing.
 
 ##Notes
-This python src/preprocessing.py starts with sentence original AMR files, while the paper version is trained on tokenized version provided by [AMR-to-English aligner](https://www.isi.edu/natural-language/mt/amr_eng_align.pdf)
-So the results could be slightly different.
+This "python src/preprocessing.py" starts with sentence original AMR files, while the paper version is trained on tokenized version provided by [AMR-to-English aligner](https://www.isi.edu/natural-language/mt/amr_eng_align.pdf)
+So the results could be slightly different. Also, to build a parser for out of domain data, please start preprocessing with "python src/preprocessing.py" to make everything consistent.
 
 ## Contact
 Contact (chunchuan.lv@gmail.com) if you have any questions!
