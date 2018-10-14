@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8"/>
+	<classpathentry kind="lib" path="/afs/inf.ed.ac.uk/user/s15/s1544871/workspace/AMR_FEATURE/src/json-20170516.jar"/>
+	<classpathentry kind="lib" path="/disk/scratch/s1544871/Dependency/stanford-corenlp-full-2018-02-27/stanford-corenlp-3.9.1.jar"/>
+	<classpathentry kind="lib" path="/disk/scratch/s1544871/Dependency/stanford-corenlp-full-2018-02-27/stanford-corenlp-3.9.1-models.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

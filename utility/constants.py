@@ -3,7 +3,7 @@ import os,re
 
 # Change the path according to your system
 
-save_to = 'model/'    #the folder amr model will be saved to  (model name is parameterized by some hyper parameter)
+save_to = '/disk/scratch/s1544871/model/'    #the folder amr model will be saved to  (model name is parameterized by some hyper parameter)
 train_from = 'model/gpus_0valid_best.pt'  #default model loading
 embed_path = "/disk/scratch/s1544871/glove.840B.300d.txt"    #file containing glove embedding
 core_nlp_url = 'http://localhost:9000'     #local host url of standford corenlp server

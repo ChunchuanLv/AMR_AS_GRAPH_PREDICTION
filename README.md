@@ -25,8 +25,10 @@ If you use our code, please cite our paper as follows:
 
 ##Preprocessing:
 Combine all *.txt files into a single one, and use stanford corenlp to extract ner, pos and lemma.
-Processed file saved in the same folder.
+Processed file saved in the same folder. 
 `python src/preprocessing.py `
+or Process from [AMR-to-English aligner](https://www.isi.edu/natural-language/mt/amr_eng_align.pdf) using java script in AMR_FEATURE (I used eclipse to run it)
+
 Build the copying dictionary and recategorization system (can skip as they are in data/).
 `python src/rule_system_build.py `
 Build data into tensor.
@@ -57,7 +59,7 @@ Keeping the files under data/ folder unchanged, download [model](https://drive.g
 Should allow one to run parsing.
 
 ##Notes
-This code starts with sentence original AMR files, while the paper version is trained on tokenized version provided by [AMR-to-English aligner](https://www.isi.edu/natural-language/mt/amr_eng_align.pdf)
+This python src/preprocessing.py starts with sentence original AMR files, while the paper version is trained on tokenized version provided by [AMR-to-English aligner](https://www.isi.edu/natural-language/mt/amr_eng_align.pdf)
 So the results could be slightly different.
 
 ## Contact
