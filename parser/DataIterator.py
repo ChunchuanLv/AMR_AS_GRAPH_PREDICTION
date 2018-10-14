@@ -283,11 +283,11 @@ class DataIterator(object):
             # within batch sorting by decreasing length for variable length rnns
             indices = range(len(srcBatch))
 
-            batch = zip(indices, srcBatch ,tgtBatch,alignBatch,rel_seq_pre,rel_index_pre,rel_role_pre,sourceBatch)
+            batch = zip(indices, srcBatch ,tgtBatch,alignBatch,rel_seq_pre,rel_index_pre,rel_role_pre,sourceBatch,roots)
             order_data =    sorted(list(enumerate(list(zip(batch, lengths)))),key = lambda x:-x[1][1])
             order,data = zip(*order_data)
             batch, lengths = zip(*data)
-            indices, srcBatch,tgtBatch,alignBatch ,rel_seq_pre,rel_index_pre,rel_role_pre,sourceBatch= zip(*batch)
+            indices, srcBatch,tgtBatch,alignBatch ,rel_seq_pre,rel_index_pre,rel_role_pre,sourceBatch,roots= zip(*batch)
 
             rel_batch,rel_index_batch,rel_lengths = self._batchify_rel_concept(rel_seq_pre,rel_index_pre)
             rel_roles,length_squares = self._batchify_rel_roles(rel_role_pre)
