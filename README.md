@@ -13,7 +13,7 @@ If you use our code, please cite our paper as follows:
 
 ## Prerequisites:
 * Python 3.6 
-* Stanford Corenlp
+* Stanford Corenlp 3.9.1 (the python wrapper is not compatible with the new one)
 * pytorch 0.20
 * [GloVe](https://nlp.stanford.edu/projects/glove/) embeddings  
 * [AMR dataset and resources files](https://amr.isi.edu/download.html)
