@@ -55,7 +55,7 @@ Parse a sentence where each line consists of a single sentence, output saved at 
 `python src/parse.py -train_from [gpus_0valid_best.pt] -text [type sentence here]`
 
 ## Pretrained models
-Keeping the files under data/ folder unchanged, download [model](https://drive.google.com/open?id=1KkKKDQdRdXgGJ8w_HhbghNK4ceLZcGvS)
+Keeping the files under data/ folder unchanged, download [model](https://drive.google.com/open?id=1jNTG3tuIfS-WoUpqGQydRgYWst51kjHx)
 Should allow one to run parsing.
 
 ## Notes
