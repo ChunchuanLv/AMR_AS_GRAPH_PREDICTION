@@ -176,11 +176,13 @@ class AMRInputPreprocessor(object):
         return data
 
 class AMRParser(object):
-    def __init__(self, opt,dicts):
+    def __init__(self, opt,dicts,parse_from_processed=False):
         self.decoder = AMRDecoder(opt,dicts)
         self.model = load_old_model(dicts,opt,True)[0]
         self.opt = opt
-        self.feature_extractor = AMRInputPreprocessor()
+        self.parse_from_processed = parse_from_processed
+        if not parse_from_processed:
+            self.feature_extractor = AMRInputPreprocessor()
         self.dicts = dicts
         self.decoder.eval()
         self.model.eval()
@@ -195,8 +197,11 @@ class AMRParser(object):
         order,srcBatch,src_sourceBatch = data_iterator[0]
         return order,srcBatch,src_sourceBatch,data_iterator
 
-    def parse_batch(self,src_text_batch):
-        all_data =[ self.feature_extractor.preprocess(src_text) for src_text in src_text_batch ]
+    def parse_batch(self,src_text_batch_or_data_batch):
+        if not self.parse_from_processed:
+            all_data =[ self.feature_extractor.preprocess(src_text) for src_text in src_text_batch_or_data_batch ]
+        else:
+            all_data = src_text_batch_or_data_batch
         order,srcBatch,sourceBatch,data_iterator = self.feature_to_torch(all_data)
         probBatch = self.model(srcBatch )
 
@@ -626,9 +631,10 @@ class AMRDecoder(object):
                         sense = self.fragment_to_node_converter.get_senses(le)
                         d["value"] = AMRUniversal(le,cat,sense)
 
-            if not self.training:
-                assert nx.is_strongly_connected(graph),("before contraction",self.graph_to_quadruples(graph),graph_to_amr(graph))
-                graph = contract_graph(graph)
+          #  if not self.training:
+            #    assert nx.is_strongly_connected(graph),("before contraction",self.graph_to_quadruples(graph),graph_to_amr(graph))
+           #     graph = contract_graph(graph)
+            #    assert nx.is_strongly_connected(graph),("before contraction",self.graph_to_quadruples(graph),graph_to_amr(graph))
 
             if set_wiki:
                 list = [[n,d]for n,d in graph.nodes(True)]

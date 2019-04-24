@@ -39,12 +39,15 @@ class AMRGraph(AMR):
             elif r == ':top':
                 d, d_v = self.var_get_uni(d)
                 self.root = d
-                self.graph.add_node(d, value=d_v, align=None,gold=True)
+                self.graph.add_node(d, value=d_v, align=None,gold=True,prefix = self._index_inv[d])
             else:
+                h_prefix =  self._index_inv[h]
+                d_prefix =  self._index_inv[d] if d in self._index_inv else d   #d will be the prefix if it is constant
+                assert isinstance(h_prefix,str) and isinstance(d_prefix,str)
                 h, h_v = self.var_get_uni(h, True,(h, r, d ))
                 d, d_v = self.var_get_uni(d)
-                self.graph.add_node(h, value=h_v, align=None,gold=True)
-                self.graph.add_node(d, value=d_v, align=None,gold=True)
+                self.graph.add_node(h, value=h_v, align=None,gold=True,prefix = h_prefix)
+                self.graph.add_node(d, value=d_v, align=None,gold=True,prefix = d_prefix)
                 self.graph.add_edge(h, d, role=r)
                 self.graph.add_edge(d, h, role=r + "-of")
 
@@ -124,6 +127,7 @@ class AMRGraph(AMR):
             return
         self.graph.node[o_node].setdefault("rely",n_node)
 
+    #link old node to new node
     def link(self,o_node,n_node,rel):
         self.graph.node[o_node].setdefault("original-of",[]).append( n_node ) # for storing order of replacement
         if n_node:
@@ -208,18 +212,19 @@ class AMRGraph(AMR):
         def rel_concept():
             index = 0
             rel_index ={}
+            rel_prefix = []
             rel_out = []
             for n, d in self.graph.nodes(True):
                 if "gold" in d:
                     rel_out.append([n,d])
                     rel_index[n] = index
+                    rel_prefix.append( d["prefix"])
                     index += 1
-
-            return rel_out,rel_index
+            return rel_out,rel_index,rel_prefix
 
         out,index_dict = concept_concept()
         if all:
-            rel_out, rel_index = rel_concept()
+            rel_out, rel_index, rel_prefix = rel_concept()
             for i, n_d in enumerate( rel_out):
                 n,d = n_d
                 if "rely" in d:
@@ -229,6 +234,6 @@ class AMRGraph(AMR):
                 else:
                     assert False , (self._anno,n,d["value"])
             assert (self.root  in rel_index),(self.graph.nodes[self.root],rel_index,self._anno)
-            return out,rel_out,rel_index[self.root]
+            return out,rel_out,rel_prefix, rel_index[self.root]
         else:
             return out

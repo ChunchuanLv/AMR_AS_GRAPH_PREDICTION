@@ -106,7 +106,7 @@ class DataIterator(object):
 
             #source
 
-            self.tgt_source.append([data["rel_seq"],data["rel_triples"],data["convertedl_seq"],data["amr_seq"],data["amr_t"]])
+            self.tgt_source.append([data["rel_seq"],data["rel_triples"],data["convertedl_seq"],data["amr_seq"],data["amr_t"],data["prefix"]])
 
 
 

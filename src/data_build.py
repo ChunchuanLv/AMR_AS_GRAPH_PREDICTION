@@ -72,7 +72,7 @@ def myamr_to_seq(amr, snt_token, lemma_token, pos, rl, fragment_to_node_converte
     output_concepts = []
     lemma_str = " ".join(lemma_token)
     fragment_to_node_converter.convert(amr, rl, snt_token, lemma_token, lemma_str)
-    concepts, rel, root_id = amr.node_value(keys=["value", "align"], all=True)
+    concepts, rel, rel_prefix, root_id = amr.node_value(keys=["value", "align"], all=True)
 
     results = rl.get_matched_concepts(snt_token, concepts, lemma_token, pos, jamr=opt.jamr)
     aligned_index = []
@@ -115,10 +115,10 @@ def myamr_to_seq(amr, snt_token, lemma_token, pos, rl, fragment_to_node_converte
 
     rel_feature = []
     rel_tgt = []
-    for amr_index, role_list in rel:
+    for i, (amr_index, role_list) in enumerate(rel):
         amr_concept = uni_to_list(amr_index[
                                       0])  # if align else  uni_to_list(AMRUniversal(UNK_WORD,output_concepts[amr_index[1]][AMR_CAT],NULL_WORD))
-        rel_feature.append(amr_concept[:4] + [amr_index[1]])
+        rel_feature.append(amr_concept[:4] + [amr_index[1]]+[rel_prefix[i]])
         #     assert amr_index[1] < len(results), (concepts, rel)
         rel_tgt.append(role_list)  # [role,rel_index]
     return output_concepts, [rel_feature, rel_tgt, root_id], unaligned_index  # [[[lemma1,lemma2],category,relation]]
@@ -208,6 +208,7 @@ def rel_seq_to_id(lemma_dict, category_dict, sensed_dict, rel_dict, rel):
     rel_feature, rel_tgt, root_id = rel
     feature_seq = []
     index_seq = []
+    prefix_seq = []
     roles_mat = []
     for l in rel_feature:
         data = [0] * 3
@@ -215,14 +216,15 @@ def rel_seq_to_id(lemma_dict, category_dict, sensed_dict, rel_dict, rel):
         data[1] = lemma_dict[l[AMR_LE]]
         data[2] = sensed_dict[l[AMR_SENSE]]
         feature_seq.append(data)
-        index_seq.append(l[-1])
+        index_seq.append(l[-2])
+        prefix_seq.append(l[-1])
     for role_list in rel_tgt:
         roles_id = []
         for role_index in role_list:
             roles_id.append([role_index[0], role_index[1]])
         roles_mat.append(roles_id)
 
-    return feature_seq, index_seq, roles_mat, root_id
+    return feature_seq, index_seq, roles_mat, root_id,prefix_seq
 
 
 def handle_sentence(data, filepath, build_dict, n, word_only):
@@ -276,7 +278,7 @@ def handle_sentence(data, filepath, build_dict, n, word_only):
         data["convertedl_seq"] = amr.node_value()
         data["rel_seq"], data["rel_triples"] = amr.get_gold()
         data["amr_id"] = amr_seq_to_id(lemma_dict, category_dict, sensed_dict, aux_dict, amr_seq)
-        data["amr_rel_id"], data["amr_rel_index"], data["roles_mat"], data["root"] = rel_seq_to_id(lemma_dict,
+        data["amr_rel_id"], data["amr_rel_index"], data["roles_mat"], data["root"],data["prefix"] = rel_seq_to_id(lemma_dict,
                                                                                                    category_dict,
                                                                                                    sensed_dict,
                                                                                                    rel_dict, rel)

@@ -477,15 +477,21 @@ public class convertingAMR {
 		String home = System.getProperty("user.home");  //change this accordingly
 
 		convertingAMR convetor = new convertingAMR("joints.txt");
-
-		System.out.println("Processing r2");
+		System.out.println("Processing file2");
+		convetor.featureExtractFolder(home + "/Data/", "file2");
+		System.out.println("Processing file3");
+		convetor.featureExtractFolder(home + "/Data/", "file3");
+		System.out.println("Processing file1");
+		//convetor.featureExtractFolder(home + "/Data/", "file1");
+	
+	/*	System.out.println("Processing r1");
 		System.out.println("Processing Dev");
-		convetor.featureExtractFolder(home + "/Data/amr_annotation_r2/data/alignments/split/dev/", "combined.txt_");
+		convetor.featureExtractFolder(home + "/Data/amr_annotation_r1/data/alignments/split/dev/", "combined.txt_");
 		System.out.println("Processing Training");
-		convetor.featureExtractFolder(home + "/Data/amr_annotation_r2/data/alignments/split/training/", "combined.txt_");
+		convetor.featureExtractFolder(home + "/Data/amr_annotation_r1/data/alignments/split/training/", "combined.txt_");
 		System.out.println("Processing Test");
-		convetor.featureExtractFolder(home + "/Data/amr_annotation_r2/data/alignments/split/test/", "combined.txt_");
-
+		convetor.featureExtractFolder(home + "/Data/amr_annotation_r1/data/alignments/split/test/", "combined.txt_");
+*/
 
 
 	}

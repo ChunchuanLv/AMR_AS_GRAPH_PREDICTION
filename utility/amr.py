@@ -25,7 +25,6 @@ from collections import Counter
 from parsimonious.grammar import Grammar
 from nltk.parse import DependencyGraph
 from utility.constants import *
-
 PUSH = "<STACK_PUSH>"
 POP = "<STACK_POP>"
 KEEP = "<STACK_KEEP>"
@@ -558,11 +557,13 @@ class AMR(DependencyGraph):
         elts = {}  # for interning variables, concepts, constants, etc.
         consts = set()  # all constants used in the A
         index = {}  #var to index
+        self._index_inv = {}
         align_var = []
 
         def intern_elt(x,prefix):
             index[prefix] =  x
             if isinstance(x,Var):
+                self._index_inv[x] = prefix
                 return elts.setdefault(x,x)
 
             return elts.setdefault(prefix,prefix)
@@ -811,7 +812,7 @@ class AMR(DependencyGraph):
                 s.append((r,d,h,d))
         out = []
         for i in range(len(s)):
-            out.append((s[i][0],s[i][1]))
+            out.append((s[i][0],s[i][1],s[i][2]))
         return out
 
 
@@ -826,6 +827,13 @@ good_tests = [
     '''(h / hot :mode expressive)''',
     '''(h / hot :mode "expressive")''',
     '''(h / hot :domain h)''',
+    '''(t / tolerate-01
+      :ARG0 (w / we)
+      :ARG1 (c / country
+            :name (n / name :op1 "Japan"))
+                  :ARG1 w
+      :duration (a / amr-unknown))
+ ''',
     '''  (  h  /  hot   :mode  expressive  )   ''',
     '''  (  h
 /
@@ -911,6 +919,10 @@ def test():
     for good in good_tests:
         try:
             a = AMR(good)
+            print (a)
+            for h, r, d in a.triples() :
+                print ([h,r,d])
+            print (a._index)
         except AMRSyntaxError:
             print('Should be valid!')
             print(sembad)

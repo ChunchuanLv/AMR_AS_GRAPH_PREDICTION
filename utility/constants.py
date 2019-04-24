@@ -4,11 +4,12 @@ import os,re
 # Change the path according to your system
 
 save_to = '/disk/scratch/s1544871/model/'    #the folder amr model will be saved to  (model name is parameterized by some hyper parameter)
-train_from = 'model/gpus_0valid_best.pt'  #default model loading
+train_from = '/disk/scratch/s1544871/model/gpus_0valid_best.pt'  #default model loading
 embed_path = "/disk/scratch/s1544871/glove.840B.300d.txt"    #file containing glove embedding
 core_nlp_url = 'http://localhost:9000'     #local host url of standford corenlp server
-allFolderPath = os.path.expanduser('~')+"/Data/amr_annotation_r2/data/alignments/split"
-resource_folder_path  = os.path.expanduser('~')+"/Data/amr_annotation_r2/"
+root_path = "/disk/scratch/s1544871"
+allFolderPath = root_path + "/amr_annotation_r1/data/alignments/split"
+resource_folder_path  = root_path +"/amr_annotation_r2/"
 frame_folder_path = resource_folder_path+"data/frames/propbank-frames-xml-2016-03-08/"
 have_org_role = resource_folder_path+"have-org-role-91-roles-v1.06.txt"   #not used
 have_rel_role = resource_folder_path+"have-rel-role-91-roles-v1.06.txt"   #not used
