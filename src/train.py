@@ -112,14 +112,14 @@ def train_parser():
 
     parser.add_argument('-batch_size', type=int, default=64,
                         help='Maximum batch size')
-    parser.add_argument('-epochs', type=int, default=30,
+    parser.add_argument('-epochs', type=int, default=60,
                         help='Number of training epochs')
     parser.add_argument('-start_epoch', type=int, default=1,
                         help='The epoch from which to start')
 
     parser.add_argument('-optim', default='adam',
                         help="Optimization method. [sgd|adagrad|adadelta|adam]")
-    parser.add_argument('-learning_rate', type=float, default=0.001,
+    parser.add_argument('-learning_rate', type=float, default=0.0003,
                         help="""Starting learning rate. If adagrad/adadelta/adam is
                         used, then this is the global learning rate. Recommended
                         settings: sgd = 1, adagrad = 0.1, adadelta = 1, adam = 0.1""")
