@@ -557,15 +557,13 @@ class AMR(DependencyGraph):
         elts = {}  # for interning variables, concepts, constants, etc.
         consts = set()  # all constants used in the A
         index = {}  #var to index
-        self._index_inv = {}
         align_var = []
 
+        self._index_inv = {}
         def intern_elt(x,prefix):
             index[prefix] =  x
             if isinstance(x,Var):
-                self._index_inv[x] = prefix
                 return elts.setdefault(x,x)
-
             return elts.setdefault(prefix,prefix)
         def walk(n,prefix = "0."):    # (v / concept...)
             triples = []
@@ -596,6 +594,7 @@ class AMR(DependencyGraph):
                             '\n' +
                             self._anno)
                     v2c[v] = Concept(concept_node.text)
+                    self._index_inv[v] = prefix[:-1]
                 elif t == '' and ch.children:
                     old_i = i
                     for ch2 in ch.children:
@@ -655,8 +654,7 @@ class AMR(DependencyGraph):
                 self.nodes[n]['deps'].extend(deps)
                 triples = [(Var('TOP'), ':top', n)] + triples
 
-
-        # All is well, so store the resulting data
+                # All is well, so store the resulting data
         self._v2c = v2c
         self._triples = triples
         self._constants = consts
@@ -823,6 +821,49 @@ class AMR(DependencyGraph):
 
 
 good_tests = [
+    '''(a / and 
+      :op1 (g / go-01 
+            :ARG1 (h / heart 
+                  :part-of (i / i)) 
+            :ARG4 (p / person 
+                  :location (a2 / alley 
+                        :mod (t / tornado))) 
+            :direction (o / out)) 
+      :op2 (h2 / have-03 :polarity - 
+            :ARG0 i 
+            :ARG1 (p2 / problem) 
+            :ARG1-of (c / cause-01 
+                  :ARG0 (g2 / go-06 
+                        :ARG0 (d / dollar 
+                              :poss i 
+                              :ARG1-of (t2 / tax-01)) 
+                        :ARG1 (h3 / help-01 
+                              :ARG0 d 
+                              :ARG1 (r / rebuild-01 
+                                    :ARG0 p3 
+                                    :ARG1 (l / life 
+                                          :poss p3)) 
+                              :ARG2 (p3 / person 
+                                    :ARG0-of (s / survive-01)))))))''',
+    '''(a / and 
+      :op1 (m / make-18 :polarity - 
+            :ARG0 (a2 / anyone 
+                  :ARG0-of (s / suffer-01 
+                        :ARG1 (l / lose-02) 
+                        :ARG1-of (r / resemble-01 
+                              :ARG2 (p / person 
+                                    :ARG0-of (l2 / lose-02 
+                                          :ARG1 (e / everything) 
+                                          :time (o / over 
+                                                :op1 (w / weekend))))))) 
+            :ARG1 (w2 / whole)) 
+      :op2 (c / come-01 
+            :ARG1 (c2 / claim 
+                  :mod (w3 / whatever) 
+                  :ARG1-of (r2 / receive-01 
+                        :ARG0 a2)) 
+            :mod (s2 / soon :polarity -) 
+            :ARG1-of (e2 / easy-05 :polarity -)))''',
     '''(h / hot)''',
     '''(h / hot :mode expressive)''',
     '''(h / hot :mode "expressive")''',
@@ -873,6 +914,7 @@ expressive
            :location (c / country-region :wiki "Tōhoku_region"
                  :name (n / name :op1 "Tohoku"))
            :quant (s / seismic-quantity :quant 9.3)
+           :arg0 c
            :time (d / date-entity :year 23 :era "Heisei"
                  :calendar (c2 / country :wiki "Japan"
                        :name (n2 / name :op1 "Japan"))))''',
@@ -920,9 +962,8 @@ def test():
         try:
             a = AMR(good)
             print (a)
-            for h, r, d in a.triples() :
-                print ([h,r,d])
             print (a._index)
+            print (a._index_inv)
         except AMRSyntaxError:
             print('Should be valid!')
             print(sembad)
