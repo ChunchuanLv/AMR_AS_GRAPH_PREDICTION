@@ -478,7 +478,8 @@ class ReCategorizor(object):
 
 
     def read_senses(self, myamr):
-        out,rel_out,root_index =  myamr.node_value(all=True)
+        
+        out, rel_out, rel_prefix, root_index = myamr.node_value(keys=["value", "align"], all=True)
         for n, roles in rel_out:   #[[self.graph.node[node]["value"],index], [r,index]]
             le, cat, sen = decompose(n[0])
             if cat !=Rule_Frame:continue
